@@ -1,0 +1,243 @@
+// Auto-detect API base URL
+// In dev: Vite proxy handles /api → localhost:5001
+// In production: Use VITE_API_URL or same origin
+const DEFAULT_RENDER_API_ORIGIN = 'https://local-lens-finalbackend.onrender.com';
+
+function trimSlash(value = '') {
+  return value.replace(/\/+$/, '');
+}
+
+function getConfiguredApiOrigin() {
+  const configured = trimSlash(import.meta.env.VITE_API_URL || '');
+  if (configured) return configured.endsWith('/api') ? configured.slice(0, -4) : configured;
+
+  if (typeof window !== 'undefined') {
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (!isLocal) return DEFAULT_RENDER_API_ORIGIN;
+  }
+
+  return '';
+}
+
+const API_ORIGIN = getConfiguredApiOrigin();
+const API_BASE = API_ORIGIN ? `${API_ORIGIN}/api` : '/api';
+const SOCKET_URL = API_ORIGIN;
+
+export { SOCKET_URL };
+
+class ApiClient {
+  constructor() { this.base = API_BASE; }
+
+  getHeaders(isFormData = false) {
+    const token = localStorage.getItem('accessToken');
+    const headers = {};
+    if (!isFormData) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  }
+
+  async request(method, path, body = null, isFormData = false) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const options = {
+      method,
+      headers: this.getHeaders(isFormData),
+      credentials: 'include',
+      signal: controller.signal,
+    };
+    if (body) options.body = isFormData ? body : JSON.stringify(body);
+
+    try {
+      const res = await fetch(`${this.base}${path}`, options);
+      clearTimeout(timeout);
+
+      if (res.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+        const refreshed = await this.refreshToken();
+        if (refreshed) {
+          options.headers = this.getHeaders(isFormData);
+          const retryRes = await fetch(`${this.base}${path}`, options);
+          if (!retryRes.ok) {
+            const err = await retryRes.json().catch(() => ({ error: 'Request failed' }));
+            throw new Error(err.error || 'Request failed');
+          }
+          return retryRes.json();
+        } else {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('user');
+          if (window.location.pathname !== '/login') window.location.href = '/login';
+          return;
+        }
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401 && path === '/auth/login') {
+          throw new Error(data.error || 'Invalid email or password');
+        }
+        if (res.status === 404) {
+          throw new Error(data.error || 'Server endpoint not found. Please check the backend URL.');
+        }
+        throw new Error(data.error || data.message || `Request failed (${res.status})`);
+      }
+      return data;
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.');
+      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+        throw new Error('Cannot connect to server. Please check your connection.');
+      }
+      throw err;
+    }
+  }
+
+  async refreshToken() {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!refreshToken) return false;
+    try {
+      const res = await fetch(`${this.base}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      return true;
+    } catch { return false; }
+  }
+
+  get(path) { return this.request('GET', path); }
+  post(path, body) { return this.request('POST', path, body); }
+  patch(path, body) { return this.request('PATCH', path, body); }
+  put(path, body) { return this.request('PUT', path, body); }
+  delete(path) { return this.request('DELETE', path); }
+
+  async uploadFile(path, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('POST', path, formData, true);
+  }
+}
+
+export const api = new ApiClient();
+
+// Auth
+export const authApi = {
+  register: (d) => api.post('/auth/register', d),
+  login: (d) => api.post('/auth/login', d),
+  logout: () => api.post('/auth/logout', {}),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
+};
+
+// Users
+export const userApi = {
+  getMe: () => api.get('/users/me'),
+  updateMe: (d) => api.patch('/users/me', d),
+  switchRole: (role) => api.patch('/users/me/role', { role }),
+  updateGuideProfile: (d) => api.patch('/users/me/guide-profile', d),
+  getWallet: () => api.get('/users/wallet'),
+};
+
+// Guides
+export const guideApi = {
+  search: (params) => api.get('/guides?' + new URLSearchParams(params).toString()),
+  recommend: () => api.get('/guides/recommend'),
+  getById: (id) => api.get(`/guides/${id}`),
+  register: (d) => api.post('/guides/register', d),
+  updateAvailability: (isAvailable) => api.patch('/guides/availability', { isAvailable }),
+  updateLocation: (lat, lng) => api.patch('/guides/location', { latitude: lat, longitude: lng }),
+  addHiddenGem: (d) => api.post('/guides/hidden-gems', d),
+  getDashboardStats: () => api.get('/guides/dashboard/stats'),
+  updateCoverImage: (coverImage) => api.patch('/guides/cover-image', { coverImage }),
+  getAvailability: (guideId) => api.get(`/guides/${guideId}/availability`),
+  addAvailabilitySlot: (data) => api.post('/guides/availability', data),
+  deleteAvailabilitySlot: (id) => api.delete(`/guides/availability/${id}`),
+};
+
+// Bookings
+export const bookingApi = {
+  create: (d) => api.post('/bookings', d),
+  getMyBookings: (params) => api.get('/bookings/my?' + new URLSearchParams(params).toString()),
+  updateStatus: (id, status) => api.patch(`/bookings/${id}/status`, { status }),
+  complete: (id) => api.patch(`/bookings/${id}/complete`),
+  reject: (id, reason) => api.patch(`/bookings/${id}/reject`, { reason }),
+};
+
+// Reels
+export const reelApi = {
+  getFeed: (params) => api.get('/reels?' + new URLSearchParams(params).toString()),
+  upload: (d) => api.post('/reels', d),
+  like: (id) => api.post(`/reels/${id}/like`),
+  view: (id) => api.post(`/reels/${id}/view`),
+  getComments: (id) => api.get(`/reels/${id}/comments`),
+  comment: (id, content) => api.post(`/reels/${id}/comment`, { content }),
+};
+
+// Group Tours
+export const groupTourApi = {
+  list: (params) => api.get('/group-tours?' + new URLSearchParams(params).toString()),
+  getById: (id) => api.get(`/group-tours/${id}`),
+  create: (d) => api.post('/group-tours', d),
+  join: (id) => api.post(`/group-tours/${id}/join`),
+  myJoined: () => api.get('/group-tours/my/joined'),
+};
+
+// Map
+export const mapApi = {
+  getGuides: (params) => api.get('/map/guides?' + new URLSearchParams(params).toString()),
+  getHiddenGems: (params) => api.get('/map/hidden-gems?' + new URLSearchParams(params).toString()),
+};
+
+// Reviews
+export const reviewApi = {
+  submit: (d) => api.post('/reviews', d),
+  create: (d) => api.post('/reviews', d),
+  respond: (id, response) => api.patch(`/reviews/${id}/respond`, { response }),
+};
+
+// Chat
+export const chatApi = {
+  getMessages: (bookingId) => api.get(`/chat/${bookingId}`),
+  send: (bookingId, content, receiverId) => api.post(`/chat/${bookingId}`, { content, receiverId }),
+  getInbox: () => api.get('/chat/inbox'),
+  getContacts: () => api.get('/chat/contacts'),
+  getConversation: (userId) => api.get(`/chat/dm/${userId}`),
+  sendDirect: (userId, content) => api.post(`/chat/dm/${userId}`, { content }),
+};
+
+// Notifications
+export const notificationApi = {
+  getAll: () => api.get('/notifications'),
+  markRead: (id) => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.patch('/notifications/mark-all-read'),
+};
+
+// Friends
+export const friendsApi = {
+  getFriends: () => api.get('/friends'),
+  search: (q) => api.get(`/friends/search?q=${encodeURIComponent(q)}`),
+  getProfile: (userId) => api.get(`/friends/profile/${userId}`),
+  sendRequest: (userId) => api.post(`/friends/request/${userId}`),
+  acceptRequest: (id) => api.patch(`/friends/request/${id}/accept`),
+  declineRequest: (id) => api.patch(`/friends/request/${id}/decline`),
+  getStatus: (userId) => api.get(`/friends/status/${userId}`),
+  getFriendCount: (userId) => api.get(`/friends/count/${userId}`),
+  getIncomingRequests: () => api.get('/friends/requests/incoming'),
+  getSentRequests: () => api.get('/friends/requests/sent'),
+};
+
+// Upload
+export const uploadApi = {
+  image: (file) => api.uploadFile('/upload/image', file),
+  video: (file) => api.uploadFile('/upload/video', file),
+};
+
+export const bucketListApi = {
+  getAll: () => api.get('/users/bucket-list'),
+  add: (data) => api.post('/users/bucket-list', data),
+  complete: (id) => api.patch(`/users/bucket-list/${id}/complete`),
+  remove: (id) => api.delete(`/users/bucket-list/${id}`),
+};
