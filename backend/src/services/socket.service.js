@@ -95,25 +95,8 @@ function setupSocketIO(io) {
     });
 
     // ── Guide location ───────────────────────────────────────────
-    socket.on('guide:updateLocation', async ({ latitude, longitude }) => {
-      try {
-        const { guideProfiles } = require('../db');
-        await guideProfiles.updateByUserId(userId, { latitude: parseFloat(latitude), longitude: parseFloat(longitude) });
-      } catch {}
-      socket.broadcast.emit('guide:locationUpdate', { guideId: userId, latitude, longitude, timestamp: new Date() });
-    });
-
-    socket.on('guide:location-update', async ({ latitude, longitude }) => {
-      try {
-        const { guideProfiles } = require('../db');
-        await guideProfiles.updateByUserId(userId, { latitude: parseFloat(latitude), longitude: parseFloat(longitude) });
-      } catch {}
+    socket.on('guide:location-update', ({ latitude, longitude }) => {
       io.emit('guide:location-updated', { guideId: userId, latitude, longitude });
-      socket.broadcast.emit('guide:locationUpdate', { guideId: userId, latitude, longitude, timestamp: new Date() });
-    });
-
-    socket.on('sos:triggered', (payload) => {
-      socket.broadcast.emit('sos:triggered', { ...payload, userId, timestamp: new Date() });
     });
 
     // ── Disconnect ───────────────────────────────────────────────

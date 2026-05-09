@@ -3,8 +3,9 @@ import Layout from '../../components/shared/Layout';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { groupTourApi, uploadApi } from '../../lib/api';
-import { Users, MapPin, Calendar, Clock, Filter, X, Plus, Share2, Image, ChevronDown, ChevronUp, CheckCircle, CreditCard, MessageCircle } from 'lucide-react';
+import { Users, MapPin, Calendar, Clock, Filter, X, Plus, Share2, Image, ChevronDown, ChevronUp, CheckCircle, CreditCard, MessageCircle, XCircle } from 'lucide-react';
 import { format, parseISO, isValid } from 'date-fns';
+import { getLocationImages } from '../../lib/locationImages';
 
 const CATEGORIES = ['Adventure','Food','Culture','Photography','Nature','Heritage','Nightlife','Shopping','Beach','Spirituality'];
 
@@ -30,12 +31,16 @@ function formatTourDate(dateStr) {
 // Photo carousel with CSS scroll-snap
 function PhotoCarousel({ photos, city, height = 200 }) {
   const [idx, setIdx] = useState(0);
+  const [failed, setFailed] = useState({});
   const gradient = CITY_GRADIENTS[city] || 'linear-gradient(135deg,#11998e 0%,#38ef7d 100%)';
+  const cityImage = getLocationImages(city).hero;
   if (!photos?.length) {
     return (
-      <div style={{ height, background: gradient, borderRadius: '12px 12px 0 0' }}
+      <div style={{ height, background: gradient, borderRadius: '12px 12px 0 0', position: 'relative', overflow: 'hidden' }}
         className="flex items-center justify-center">
-        <p className="text-white font-bold text-lg drop-shadow">{city}</p>
+        <img src={cityImage} alt="" className="absolute inset-0 h-full w-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+        <p className="relative text-white font-bold text-lg drop-shadow">{city}</p>
       </div>
     );
   }
@@ -44,7 +49,12 @@ function PhotoCarousel({ photos, city, height = 200 }) {
       <div style={{ display: 'flex', height: '100%', transform: `translateX(-${idx * 100}%)`, transition: 'transform 0.35s ease', width: `${photos.length * 100}%` }}>
         {photos.map((url, i) => (
           <div key={i} style={{ width: `${100 / photos.length}%`, flexShrink: 0 }}>
-            <img src={url} alt="" style={{ width: '100%', height, objectFit: 'cover' }} />
+            <img
+              src={failed[i] ? cityImage : url}
+              alt=""
+              style={{ width: '100%', height, objectFit: 'cover' }}
+              onError={() => setFailed(prev => ({ ...prev, [i]: true }))}
+            />
           </div>
         ))}
       </div>
@@ -101,6 +111,8 @@ export default function GroupToursPage() {
   const [activeTab, setActiveTab] = useState('discover');
   const [expandedTour, setExpandedTour] = useState(null);
   const [joiningId, setJoiningId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+  const [cancelConfirmId, setCancelConfirmId] = useState(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [filters, setFilters] = useState({ city: '', category: '', minPrice: '', maxPrice: '' });
@@ -145,6 +157,18 @@ export default function GroupToursPage() {
     } catch (err) {
       toast.error(err.message);
     } finally { setJoiningId(null); }
+  };
+
+  const handleCancelJoin = async (tourId) => {
+    setCancellingId(tourId);
+    try {
+      await groupTourApi.leave(tourId);
+      setCancelConfirmId(null);
+      await loadData();
+      toast.success('Tour cancelled', 'Your spot is available again.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally { setCancellingId(null); }
   };
 
   const handleShare = async (tour) => {
@@ -289,7 +313,9 @@ export default function GroupToursPage() {
 
                 <div className="p-4">
                   <h3 className="font-bold text-gray-900 mb-1">{tour.title}</h3>
-                  <p className="text-xs text-gray-500 mb-3 line-clamp-2">{tour.description}</p>
+                  <p className="text-xs text-gray-500 mb-3 line-clamp-2 hover:line-clamp-none transition-all" title={tour.description}>
+                    {tour.description}
+                  </p>
 
                   {/* Details */}
                   <div className="space-y-1.5 text-xs text-gray-600 mb-3">
@@ -318,6 +344,7 @@ export default function GroupToursPage() {
 
                   {isExpanded && (
                     <div className="bg-gray-50 rounded-lg p-3 mb-3 text-xs text-gray-600 space-y-1.5">
+                      {tour.description && <div className="flex gap-1.5"><span className="font-medium text-gray-700">Details:</span><span>{tour.description}</span></div>}
                       {tour.meetupPoint && <div className="flex gap-1.5"><span className="font-medium text-gray-700">📍 Meetup:</span><span>{tour.meetupPoint}</span></div>}
                       {tour.guide?.user && (
                         <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
@@ -344,9 +371,36 @@ export default function GroupToursPage() {
                         <MessageCircle className="w-4 h-4 text-green-600" />
                       </a>
                     )}
-                    <button
+                    {joined && (
+                      cancelConfirmId === tour.id ? (
+                        <div className="flex-1 flex gap-2">
+                          <button
+                            onClick={() => handleCancelJoin(tour.id)}
+                            disabled={cancellingId === tour.id}
+                            className="flex-1 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-70 transition"
+                          >
+                            {cancellingId === tour.id ? 'Cancelling...' : 'Yes, cancel'}
+                          </button>
+                          <button
+                            onClick={() => setCancelConfirmId(null)}
+                            disabled={cancellingId === tour.id}
+                            className="px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-70 transition"
+                          >
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setCancelConfirmId(tour.id)}
+                          className="flex-1 py-2 rounded-xl text-sm font-semibold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition inline-flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle className="w-4 h-4" /> Cancel Tour
+                        </button>
+                      )
+                    )}
+                    {!joined && <button
                       onClick={() => !joined && spotsLeft > 0 && handleJoin(tour.id, tour.pricePerPerson)}
-                      disabled={joined || spotsLeft === 0 || joiningId === tour.id}
+                      disabled={spotsLeft === 0 || joiningId === tour.id}
                       className={`flex-1 py-2 rounded-xl text-sm font-semibold transition ${
                         joined ? 'bg-green-50 text-green-700 border border-green-200' :
                         spotsLeft === 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' :
@@ -357,7 +411,7 @@ export default function GroupToursPage() {
                           <div className="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />Joining...
                         </span>
                       ) : joined ? '✓ Joined' : spotsLeft === 0 ? 'Tour Full' : 'Join Tour'}
-                    </button>
+                    </button>}
                   </div>
                 </div>
               </div>

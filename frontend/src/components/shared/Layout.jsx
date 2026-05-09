@@ -2,8 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useState, useEffect } from 'react';
-import { bookingApi, notificationApi, api } from '../../lib/api';
-import { useSocket } from '../../context/SocketContext';
+import { notificationApi } from '../../lib/api';
 import {
   Home, Compass, Users, Film, Map, MessageCircle, Bell, User,
   Settings, LogOut, Globe, UserCheck, Menu, X, Plus, ArrowRightLeft,
@@ -13,7 +12,6 @@ import {
 export default function Layout({ children, title }) {
   const { user, logout, switchRole, refreshUser } = useAuth();
   const toast = useToast();
-  const { socket } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -22,7 +20,6 @@ export default function Layout({ children, title }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [switching, setSwitching] = useState(false);
   const [dark, setDark] = useState(false);
-  const [activeBooking, setActiveBooking] = useState(null);
 
   // Apply saved theme on mount
   useEffect(() => {
@@ -40,12 +37,6 @@ export default function Layout({ children, title }) {
     }).catch(() => {});
   }, [location.pathname]);
 
-  useEffect(() => {
-    bookingApi.getMyBookings({}).then(d => {
-      setActiveBooking((d.bookings || []).find(b => b.status === 'CONFIRMED') || null);
-    }).catch(() => {});
-  }, [location.pathname]);
-
   const toggleDark = () => {
     const next = !dark;
     setDark(next);
@@ -58,7 +49,8 @@ export default function Layout({ children, title }) {
     }
   };
 
-  const isGuide = user?.role === 'GUIDE' || user?.role === 'BOTH';
+  const isGuideMode = user?.role === 'GUIDE' || user?.role === 'BOTH';
+  const hasGuideProfile = !!user?.guideProfile || isGuideMode;
   const isInGuideDashboard = location.pathname === '/guide-dashboard';
 
   const navItems = [
@@ -95,29 +87,6 @@ export default function Layout({ children, title }) {
     } finally {
       setSwitching(false);
     }
-  };
-
-  const handleSOS = () => {
-    if (!activeBooking) return;
-    if (!navigator.geolocation) {
-      toast.error('Location is not available in this browser');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      try {
-        const payload = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          bookingId: activeBooking.id,
-          message: 'Emergency SOS from active booking',
-        };
-        await api.post('/sos', payload);
-        socket?.emit('sos:triggered', payload);
-        toast.success('Emergency alert sent. Help is on the way.');
-      } catch (err) {
-        toast.error(err.message || 'Failed to send SOS');
-      }
-    }, () => toast.error('Location access denied'));
   };
 
   return (
@@ -176,7 +145,7 @@ export default function Layout({ children, title }) {
             </Link>
 
             {/* Role switch — desktop only */}
-            {isGuide && (
+            {hasGuideProfile && (
               <button
                 onClick={handleRoleSwitch}
                 disabled={switching}
@@ -229,7 +198,7 @@ export default function Layout({ children, title }) {
 
                     <hr className="my-1 border-gray-100" />
 
-                    {isGuide ? (
+                    {hasGuideProfile ? (
                       <button
                         onClick={() => { handleRoleSwitch(); setMenuOpen(false); }}
                         disabled={switching}
@@ -329,7 +298,7 @@ export default function Layout({ children, title }) {
                 <Settings className="w-4 h-4 text-gray-400" /> Settings
               </Link>
 
-              {isGuide ? (
+              {hasGuideProfile ? (
                 <button
                   onClick={() => { handleRoleSwitch(); setMobileOpen(false); }}
                   className="flex items-center gap-2 py-2.5 text-sm text-green-600 w-full"
@@ -360,15 +329,6 @@ export default function Layout({ children, title }) {
         {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
         {children}
       </main>
-      {activeBooking && (
-        <button
-          onClick={handleSOS}
-          className="fixed bottom-20 right-4 z-50 bg-red-600 hover:bg-red-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg animate-pulse font-black"
-          title="Emergency SOS"
-        >
-          SOS
-        </button>
-      )}
     </div>
   );
 }

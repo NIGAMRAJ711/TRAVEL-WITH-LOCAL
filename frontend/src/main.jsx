@@ -5,7 +5,6 @@ import App from './App'
 import { AuthProvider } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
 import { ToastProvider } from './context/ToastContext'
-import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,17 +12,19 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <AuthProvider>
       <ToastProvider>
         <SocketProvider>
-          <ErrorBoundary>
-            <App />
-          </ErrorBoundary>
+          <App />
         </SocketProvider>
       </ToastProvider>
     </AuthProvider>
   </BrowserRouter>
 )
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
+} else if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(registrations => registrations.forEach(registration => registration.unregister()))
+    .catch(() => {});
 }

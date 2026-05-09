@@ -155,18 +155,13 @@ export default function MapPage() {
   // Live guide location via socket
   useEffect(() => {
     if (!socket || !L) return;
-    const handleLocation = ({ guideId, latitude, longitude }) => {
+    socket.on('guide:location-updated', ({ guideId, latitude, longitude }) => {
       setGuides(prev => prev.map(g => g.userId === guideId ? { ...g, latitude, longitude } : g));
       if (markersRef.current[`guide_${guideId}`] && leafletMap.current) {
         markersRef.current[`guide_${guideId}`].setLatLng([latitude, longitude]);
       }
-    };
-    socket.on('guide:location-updated', handleLocation);
-    socket.on('guide:locationUpdate', handleLocation);
-    return () => {
-      socket.off('guide:location-updated', handleLocation);
-      socket.off('guide:locationUpdate', handleLocation);
-    };
+    });
+    return () => socket.off('guide:location-updated');
   }, [socket, L]);
 
   // Update own guide location
@@ -176,10 +171,7 @@ export default function MapPage() {
     navigator.geolocation.getCurrentPosition(async pos => {
       try {
         await guideApi.updateLocation(pos.coords.latitude, pos.coords.longitude);
-        if (socket) {
-          socket.emit('guide:location-update', { latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-          socket.emit('guide:updateLocation', { latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-        }
+        if (socket) socket.emit('guide:location-update', { latitude: pos.coords.latitude, longitude: pos.coords.longitude });
       } catch {}
     });
   }, [user, socket]);
@@ -356,19 +348,21 @@ export default function MapPage() {
         {selectedGuide && (
           <div className="w-72 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden sticky top-32">
-              <div className="h-24 relative" style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>
+              <div className="h-20 relative" style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>
                 <button onClick={() => setSelectedGuide(null)} className="absolute top-2 right-2 bg-white/80 rounded-full p-1">
                   <X className="w-4 h-4 text-gray-600" />
                 </button>
               </div>
-              <div className="px-4 pb-4 -mt-8">
-                {selectedGuide.user?.avatarUrl ? (
-                  <img src={selectedGuide.user.avatarUrl} className="w-16 h-16 rounded-xl border-4 border-white shadow object-cover mb-2" alt="" />
-                ) : (
-                  <div className="w-16 h-16 rounded-xl border-4 border-white shadow bg-green-500 flex items-center justify-center text-xl font-bold text-white mb-2">
-                    {selectedGuide.user?.fullName?.[0]}
-                  </div>
-                )}
+              <div className="px-4 pb-4 pt-4">
+                <div className="mb-3 w-20 h-20 rounded-2xl bg-white p-1 shadow-lg border border-gray-100">
+                  {selectedGuide.user?.avatarUrl ? (
+                    <img src={selectedGuide.user.avatarUrl} className="w-full h-full rounded-xl object-cover" alt={selectedGuide.user?.fullName || 'Guide'} />
+                  ) : (
+                    <div className="w-full h-full rounded-xl bg-green-500 flex items-center justify-center text-2xl font-bold text-white">
+                      {selectedGuide.user?.fullName?.[0]}
+                    </div>
+                  )}
+                </div>
                 <h3 className="font-bold text-gray-900">{selectedGuide.user?.fullName}</h3>
                 <p className="text-sm text-gray-500 flex items-center gap-1 mb-1"><MapPin className="w-3 h-3" />{selectedGuide.city}</p>
                 <div className="flex items-center gap-2 text-sm mb-2">

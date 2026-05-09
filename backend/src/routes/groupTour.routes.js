@@ -1,4 +1,3 @@
-/** Group tour routes: public tour discovery, creation, joining, and user joined tours. */
 const express = require('express');
 const router = express.Router();
 const { groupTours, groupTourMembers, guideProfiles, notifications, users } = require('../db');
@@ -87,5 +86,28 @@ router.post('/:id/join', protect, async (req, res) => {
     res.status(201).json({ member });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
+
+async function cancelGroupTourJoin(req, res) {
+  try {
+    const tour = await groupTours.findById(req.params.id);
+    await groupTourMembers.leave(req.params.id, req.user.id);
+
+    const creatorId = tour?.creatorId || tour?.guide?.userId;
+    if (creatorId && creatorId !== req.user.id) {
+      await notifications.create({
+        userId: creatorId,
+        title: 'Member cancelled',
+        body: `${req.user.fullName} cancelled their spot on "${tour.title}"`,
+        type: 'GROUP_TOUR_CANCEL',
+        data: { tourId: tour.id, tourTitle: tour.title, userId: req.user.id },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+router.post('/:id/cancel', protect, cancelGroupTourJoin);
+router.delete('/:id/join', protect, cancelGroupTourJoin);
 
 module.exports = router;

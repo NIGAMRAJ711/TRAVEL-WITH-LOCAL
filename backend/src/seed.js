@@ -451,8 +451,9 @@ async function seed() {
     }
   }
 
-  console.log('');
-  console.log('Seeding complete!');
+  console.log('
+✅ Seeding complete!
+');
   console.log('📋 Demo Login Credentials:');
   console.log('   TRAVELER  → traveler@demo.com      | Travel@1234');
   console.log('   GUIDE 1   → arjun@guide.com        | Guide@1234  (Mumbai)');

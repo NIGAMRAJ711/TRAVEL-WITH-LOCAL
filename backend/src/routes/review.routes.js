@@ -1,8 +1,21 @@
-/** Review routes: traveler reviews, guide responses, and safety reports. */
 const express = require('express');
 const router = express.Router();
-const { reviews, bookings, guideProfiles, notifications, users } = require('../db');
+const { reviews, bookings, guideProfiles, notifications, users, blockedIdentifiers, tripReports } = require('../db');
 const { protect } = require('../middleware/error.middleware');
+
+// GET /api/reviews/pending - completed traveller bookings without a review
+router.get('/pending', protect, async (req, res) => {
+  try {
+    const completed = await bookings.findMany({ travelerId: req.user.id, status: 'COMPLETED' });
+    const pending = [];
+    for (const booking of completed) {
+      const existing = await reviews.findByBookingId(booking.id);
+      const reported = await tripReports.findByBookingId(booking.id);
+      if (!existing && !reported) pending.push(booking);
+    }
+    res.json({ bookings: pending });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /api/reviews
 router.post('/', protect, async (req, res) => {
@@ -29,6 +42,49 @@ router.get('/guide/:guideUserId', async (req, res) => {
 });
 
 // PATCH /api/reviews/:id/response — guide replies
+// POST /api/reviews/report - report a completed guide trip and block that guide's identifiers
+router.post('/report', protect, async (req, res) => {
+  try {
+    const { bookingId, reason } = req.body;
+    if (!bookingId) return res.status(400).json({ error: 'bookingId required' });
+
+    const booking = await bookings.findById(bookingId);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.status !== 'COMPLETED') return res.status(400).json({ error: 'Can only report completed tours' });
+    if (booking.travelerId !== req.user.id) return res.status(403).json({ error: 'Only the traveller can report this trip' });
+
+    const reportedUser = await users.findById(booking.guideId);
+    if (!reportedUser) return res.status(404).json({ error: 'Guide not found' });
+
+    const report = await tripReports.create({
+      bookingId,
+      reporterId: req.user.id,
+      reportedUserId: reportedUser.id,
+      reason: reason || 'Reported from completed-trip review popup',
+    });
+
+    const guideProfile = await guideProfiles.findByUserId(reportedUser.id).catch(() => null);
+    if (guideProfile) await guideProfiles.update(guideProfile.id, { isBlacklisted: true, isAvailable: false });
+    await users.update(reportedUser.id, { isActive: false });
+    const blocked = await blockedIdentifiers.blockUser(reportedUser, {
+      reportedBy: req.user.id,
+      bookingId,
+      reason: reason || 'Reported from completed-trip review popup',
+    });
+
+    await notifications.create({
+      userId: reportedUser.id,
+      title: 'Account Suspended',
+      body: 'Your account has been reported after a completed trip and suspended pending review.',
+      type: 'GENERAL',
+      data: { bookingId, reportId: report.id },
+    });
+
+    console.log(`REPORT: User ${reportedUser.id} blocked by ${req.user.id}. Booking: ${bookingId}. Reason: ${reason || ''}`);
+    res.json({ message: 'Report submitted. This guide account, email, and mobile number are now blocked.', report, blockedCount: blocked.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.patch('/:id/response', protect, async (req, res) => {
   try {
     const { response } = req.body;
@@ -61,7 +117,12 @@ router.post('/blacklist/:guideUserId', protect, async (req, res) => {
 
     // Mark guide as blacklisted
     await guideProfiles.update(targetGuide.id, { isBlacklisted: true, isAvailable: false });
+    const targetUser = await users.findById(req.params.guideUserId);
     await users.update(req.params.guideUserId, { isActive: false });
+    await blockedIdentifiers.blockUser(targetUser, {
+      reportedBy: req.user.id,
+      reason: reason || 'Blacklisted by traveller',
+    });
 
     // Notify admins (log for now)
     console.log(`⚠️ BLACKLIST: Guide ${req.params.guideUserId} blacklisted by ${req.user.id}. Reason: ${reason}`);

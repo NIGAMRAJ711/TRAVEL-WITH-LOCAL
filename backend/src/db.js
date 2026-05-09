@@ -15,22 +15,6 @@ if (USE_PG) {
     max: 10, idleTimeoutMillis: 30000,
   });
   console.log('🐘 PostgreSQL mode');
-  let retries = 5;
-  const testConnection = async () => {
-    try {
-      await pgPool.query('SELECT 1');
-      console.log('PostgreSQL connected');
-    } catch (err) {
-      if (retries-- > 0) {
-        console.log(`DB not ready, retrying in 3s... (${retries} left)`);
-        setTimeout(testConnection, 3000);
-      } else {
-        console.error('Could not connect to PostgreSQL after 5 retries');
-        process.exit(1);
-      }
-    }
-  };
-  testConnection();
 } else {
   console.log('📦 JSON file mode (set DATABASE_URL for PostgreSQL)');
 }
@@ -59,6 +43,15 @@ function loadStore(name) {
 function saveStore(name, data) {
   fs.writeFileSync(path.join(DATA_DIR, `${name}.json`), JSON.stringify(data, null, 2));
 }
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+function normalizePhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
 
 // Schema bootstrap
 async function initSchema() {
@@ -67,26 +60,6 @@ async function initSchema() {
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,phone TEXT,password_hash TEXT NOT NULL,full_name TEXT NOT NULL,avatar_url TEXT,role TEXT DEFAULT 'TRAVELER',is_active BOOLEAN DEFAULT true,is_email_verified BOOLEAN DEFAULT false,referral_code TEXT,referred_by TEXT,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
     CREATE TABLE IF NOT EXISTS guide_profiles(id TEXT PRIMARY KEY,user_id TEXT UNIQUE REFERENCES users(id) ON DELETE CASCADE,bio TEXT DEFAULT '',city TEXT DEFAULT '',country TEXT DEFAULT 'India',languages TEXT[] DEFAULT '{}',expertise_tags TEXT[] DEFAULT '{}',is_photographer BOOLEAN DEFAULT false,is_available BOOLEAN DEFAULT false,hourly_rate NUMERIC DEFAULT 500,half_day_rate NUMERIC DEFAULT 2000,full_day_rate NUMERIC DEFAULT 3500,photography_rate NUMERIC,total_bookings INT DEFAULT 0,total_earnings NUMERIC DEFAULT 0,avg_rating NUMERIC DEFAULT 0,total_reviews INT DEFAULT 0,latitude NUMERIC,longitude NUMERIC,wallet_balance NUMERIC DEFAULT 0,verification_status TEXT DEFAULT 'UNVERIFIED',cover_image TEXT,is_blacklisted BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
     CREATE TABLE IF NOT EXISTS follows(id TEXT PRIMARY KEY,follower_id TEXT REFERENCES users(id) ON DELETE CASCADE,following_id TEXT REFERENCES users(id) ON DELETE CASCADE,status TEXT DEFAULT 'PENDING',created_at TIMESTAMPTZ DEFAULT NOW(),UNIQUE(follower_id,following_id));
-    CREATE TABLE IF NOT EXISTS traveler_profiles(id TEXT PRIMARY KEY,user_id TEXT UNIQUE REFERENCES users(id) ON DELETE CASCADE,interests TEXT[] DEFAULT '{}',home_city TEXT,total_tours_booked INT DEFAULT 0,loyalty_points INT DEFAULT 0,wallet_balance NUMERIC DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES users(id),traveler_id TEXT REFERENCES users(id),booking_type TEXT DEFAULT 'PRIVATE',duration TEXT DEFAULT 'ONE_HOUR',status TEXT DEFAULT 'PENDING',date TEXT,start_time TEXT,meetup_location TEXT DEFAULT '',special_requests TEXT DEFAULT '',base_price NUMERIC DEFAULT 0,platform_fee NUMERIC DEFAULT 0,total_amount NUMERIC DEFAULT 0,payment_status TEXT DEFAULT 'PENDING',escrow_released BOOLEAN DEFAULT false,tour_completed_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS group_tours(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES guide_profiles(id),title TEXT NOT NULL,description TEXT DEFAULT '',city TEXT DEFAULT '',date TEXT,start_time TEXT,duration TEXT DEFAULT '3 hours',max_members INT DEFAULT 6,price_per_person NUMERIC DEFAULT 0,meetup_point TEXT DEFAULT '',meetup_lat NUMERIC,meetup_lng NUMERIC,itinerary JSONB DEFAULT '[]',category TEXT[] DEFAULT '{}',cover_image TEXT,is_active BOOLEAN DEFAULT true,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS group_tour_members(id TEXT PRIMARY KEY,group_tour_id TEXT REFERENCES group_tours(id) ON DELETE CASCADE,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,joined_at TIMESTAMPTZ DEFAULT NOW(),payment_status TEXT DEFAULT 'PENDING',UNIQUE(group_tour_id,user_id));
-    CREATE TABLE IF NOT EXISTS reels(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,video_url TEXT NOT NULL,thumbnail_url TEXT,caption TEXT DEFAULT '',reel_type TEXT DEFAULT 'GENERAL',city TEXT DEFAULT '',location_name TEXT DEFAULT '',latitude NUMERIC,longitude NUMERIC,views INT DEFAULT 0,likes_count INT DEFAULT 0,comments_count INT DEFAULT 0,is_active BOOLEAN DEFAULT true,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS reel_likes(id TEXT PRIMARY KEY,reel_id TEXT REFERENCES reels(id) ON DELETE CASCADE,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,created_at TIMESTAMPTZ DEFAULT NOW(),UNIQUE(reel_id,user_id));
-    CREATE TABLE IF NOT EXISTS reel_comments(id TEXT PRIMARY KEY,reel_id TEXT REFERENCES reels(id) ON DELETE CASCADE,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE,sender_id TEXT REFERENCES users(id),receiver_id TEXT REFERENCES users(id),content TEXT NOT NULL,is_read BOOLEAN DEFAULT false,read_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS reviews(id TEXT PRIMARY KEY,booking_id TEXT UNIQUE REFERENCES bookings(id),reviewer_id TEXT REFERENCES users(id),reviewee_id TEXT REFERENCES users(id),rating NUMERIC NOT NULL,comment TEXT DEFAULT '',photos TEXT[] DEFAULT '{}',guide_response TEXT,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS guide_availability(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES guide_profiles(id) ON DELETE CASCADE,date DATE NOT NULL,start_time TEXT NOT NULL,end_time TEXT DEFAULT '',is_booked BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS bucket_list(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,city TEXT NOT NULL,description TEXT DEFAULT '',is_completed BOOLEAN DEFAULT false,completed_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS direct_messages(id TEXT PRIMARY KEY,sender_id TEXT REFERENCES users(id) ON DELETE CASCADE,receiver_id TEXT REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,is_read BOOLEAN DEFAULT false,read_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,body TEXT DEFAULT '',type TEXT DEFAULT 'GENERAL',data JSONB DEFAULT '{}',is_read BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS hidden_gems(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES guide_profiles(id) ON DELETE CASCADE,name TEXT NOT NULL,description TEXT DEFAULT '',category TEXT DEFAULT '',city TEXT DEFAULT '',latitude NUMERIC DEFAULT 0,longitude NUMERIC DEFAULT 0,is_locked BOOLEAN DEFAULT true,photos TEXT[] DEFAULT '{}',created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS wallet_transactions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,amount NUMERIC NOT NULL,type TEXT DEFAULT 'CREDIT',description TEXT DEFAULT '',booking_id TEXT,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE TABLE IF NOT EXISTS sos_alerts(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),latitude NUMERIC,longitude NUMERIC,booking_id TEXT,message TEXT DEFAULT 'SOS Alert',is_resolved BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW());
-    CREATE INDEX IF NOT EXISTS idx_dm_sender ON direct_messages(sender_id);
-    CREATE INDEX IF NOT EXISTS idx_dm_receiver ON direct_messages(receiver_id);
-    CREATE INDEX IF NOT EXISTS idx_wallet_user ON wallet_transactions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
     ALTER TABLE guide_profiles ADD COLUMN IF NOT EXISTS cover_image TEXT;
     ALTER TABLE guide_profiles ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN DEFAULT false;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN DEFAULT false;
@@ -98,30 +71,56 @@ async function initSchema() {
     ALTER TABLE guide_profiles ADD COLUMN IF NOT EXISTS cab_full_day_price NUMERIC DEFAULT 0;
     ALTER TABLE guide_profiles ADD COLUMN IF NOT EXISTS hotel_recommendations TEXT DEFAULT '';
     ALTER TABLE guide_profiles ADD COLUMN IF NOT EXISTS restaurant_recommendations TEXT DEFAULT '';
+    CREATE TABLE IF NOT EXISTS guide_availability(
+      id TEXT PRIMARY KEY,
+      guide_id TEXT REFERENCES guide_profiles(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT DEFAULT '',
+      is_booked BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS bucket_list(
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      city TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      is_completed BOOLEAN DEFAULT false,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS direct_messages(id TEXT PRIMARY KEY,sender_id TEXT REFERENCES users(id) ON DELETE CASCADE,receiver_id TEXT REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,is_read BOOLEAN DEFAULT false,read_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE INDEX IF NOT EXISTS idx_dm_sender ON direct_messages(sender_id);
+    CREATE INDEX IF NOT EXISTS idx_dm_receiver ON direct_messages(receiver_id);
+    CREATE TABLE IF NOT EXISTS traveler_profiles(id TEXT PRIMARY KEY,user_id TEXT UNIQUE REFERENCES users(id) ON DELETE CASCADE,interests TEXT[] DEFAULT '{}',home_city TEXT,total_tours_booked INT DEFAULT 0,loyalty_points INT DEFAULT 0,wallet_balance NUMERIC DEFAULT 0,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES users(id),traveler_id TEXT REFERENCES users(id),booking_type TEXT DEFAULT 'PRIVATE',duration TEXT DEFAULT 'ONE_HOUR',status TEXT DEFAULT 'PENDING',date TEXT,start_time TEXT,meetup_location TEXT DEFAULT '',special_requests TEXT DEFAULT '',base_price NUMERIC DEFAULT 0,platform_fee NUMERIC DEFAULT 0,total_amount NUMERIC DEFAULT 0,payment_status TEXT DEFAULT 'PENDING',escrow_released BOOLEAN DEFAULT false,tour_completed_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS group_tours(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES guide_profiles(id),title TEXT NOT NULL,description TEXT DEFAULT '',city TEXT DEFAULT '',date TEXT,start_time TEXT,duration TEXT DEFAULT '3 hours',max_members INT DEFAULT 6,price_per_person NUMERIC DEFAULT 0,meetup_point TEXT DEFAULT '',meetup_lat NUMERIC,meetup_lng NUMERIC,itinerary JSONB DEFAULT '[]',category TEXT[] DEFAULT '{}',cover_image TEXT,is_active BOOLEAN DEFAULT true,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS group_tour_members(id TEXT PRIMARY KEY,group_tour_id TEXT REFERENCES group_tours(id) ON DELETE CASCADE,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,joined_at TIMESTAMPTZ DEFAULT NOW(),payment_status TEXT DEFAULT 'PENDING',UNIQUE(group_tour_id,user_id));
+    CREATE TABLE IF NOT EXISTS reels(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,video_url TEXT NOT NULL,thumbnail_url TEXT,caption TEXT DEFAULT '',reel_type TEXT DEFAULT 'GENERAL',city TEXT DEFAULT '',location_name TEXT DEFAULT '',latitude NUMERIC,longitude NUMERIC,views INT DEFAULT 0,likes_count INT DEFAULT 0,comments_count INT DEFAULT 0,is_active BOOLEAN DEFAULT true,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS reel_likes(id TEXT PRIMARY KEY,reel_id TEXT REFERENCES reels(id) ON DELETE CASCADE,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,created_at TIMESTAMPTZ DEFAULT NOW(),UNIQUE(reel_id,user_id));
+    CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE,sender_id TEXT REFERENCES users(id),receiver_id TEXT REFERENCES users(id),content TEXT NOT NULL,is_read BOOLEAN DEFAULT false,read_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS reviews(id TEXT PRIMARY KEY,booking_id TEXT UNIQUE REFERENCES bookings(id),reviewer_id TEXT REFERENCES users(id),reviewee_id TEXT REFERENCES users(id),rating NUMERIC NOT NULL,comment TEXT DEFAULT '',photos TEXT[] DEFAULT '{}',guide_response TEXT,created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,body TEXT DEFAULT '',type TEXT DEFAULT 'GENERAL',data JSONB,is_read BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS blocked_identifiers(id TEXT PRIMARY KEY,type TEXT NOT NULL,value TEXT NOT NULL,reported_user_id TEXT REFERENCES users(id),reported_by TEXT REFERENCES users(id),booking_id TEXT,reason TEXT DEFAULT '',created_at TIMESTAMPTZ DEFAULT NOW(),UNIQUE(type,value));
+    CREATE TABLE IF NOT EXISTS trip_reports(id TEXT PRIMARY KEY,booking_id TEXT UNIQUE REFERENCES bookings(id),reporter_id TEXT REFERENCES users(id),reported_user_id TEXT REFERENCES users(id),reason TEXT DEFAULT '',created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS hidden_gems(id TEXT PRIMARY KEY,guide_id TEXT REFERENCES guide_profiles(id),name TEXT NOT NULL,description TEXT DEFAULT '',category TEXT DEFAULT '',city TEXT DEFAULT '',latitude NUMERIC DEFAULT 0,longitude NUMERIC DEFAULT 0,is_locked BOOLEAN DEFAULT true,photos TEXT[] DEFAULT '{}',created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS wallet_transactions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),amount NUMERIC NOT NULL,type TEXT DEFAULT 'CREDIT',description TEXT DEFAULT '',booking_id TEXT,created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS sos_alerts(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),latitude NUMERIC,longitude NUMERIC,booking_id TEXT,message TEXT DEFAULT 'SOS Alert',is_resolved BOOLEAN DEFAULT false,created_at TIMESTAMPTZ DEFAULT NOW());
+    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS number_of_people INT DEFAULT 1;
+    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hotel_preference TEXT DEFAULT '';
+    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS restaurant_preference TEXT DEFAULT '';
+    ALTER TABLE reviews ADD COLUMN IF NOT EXISTS guide_response TEXT;
+    ALTER TABLE reviews ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ;
     ALTER TABLE group_tours ADD COLUMN IF NOT EXISTS whatsapp_link TEXT DEFAULT '';
     ALTER TABLE group_tours ADD COLUMN IF NOT EXISTS photos TEXT[] DEFAULT '{}';
     ALTER TABLE group_tours ADD COLUMN IF NOT EXISTS creator_id TEXT REFERENCES users(id);
     ALTER TABLE group_tours ADD COLUMN IF NOT EXISTS creator_type TEXT DEFAULT 'TRAVELER';
-    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS number_of_people INT DEFAULT 1;
-    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hotel_preference TEXT DEFAULT '';
-    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS restaurant_preference TEXT DEFAULT '';
-    ALTER TABLE reviews ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ;
   `;
-  const client = await pgPool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query(sql);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-  console.log('PostgreSQL schema ready');
+  await query(sql);
+  console.log('✅ PostgreSQL schema ready');
 }
 
-// USERS
+// ── USERS ──
 const users = {
   async findAll() {
     if (USE_PG) return (await query('SELECT * FROM users')).map(r=>({id:r.id,email:r.email,phone:r.phone,passwordHash:r.password_hash,fullName:r.full_name,avatarUrl:r.avatar_url,role:r.role,isActive:r.is_active,isEmailVerified:r.is_email_verified,referralCode:r.referral_code,createdAt:r.created_at,updatedAt:r.updated_at}));
@@ -166,11 +165,19 @@ const guideProfiles = {
     return {...g,user:u?{id:u.id,fullName:u.fullName,avatarUrl:u.avatarUrl,email:u.email,createdAt:u.createdAt}:null};
   },
   async findMany(q={}) {
-    const {city,search,minPrice,maxPrice,rating,isAvailable,lat,lng,radius=50,page=1,limit=12}=q;
+    const {city,search,minPrice,maxPrice,rating,isAvailable,lat,lng,radius,page=1,limit=12}=q;
+    const hasCoords = lat !== undefined && lng !== undefined && lat !== '' && lng !== '';
+    const toRad = (v) => (parseFloat(v) * Math.PI) / 180;
+    const distanceKm = (aLat, aLng, bLat, bLng) => {
+      const dLat = toRad(bLat - aLat);
+      const dLng = toRad(bLng - aLng);
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+      return Math.round(6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 10) / 10;
+    };
     if(USE_PG){
       let sql=`SELECT g.*,u.full_name,u.avatar_url,u.email,u.created_at as uc`;
       const p=[]; let i=1;
-      if(lat&&lng){
+      if(hasCoords){
         sql+=`,ROUND((6371*acos(LEAST(1,cos(radians($${i++}))*cos(radians(g.latitude))*cos(radians(g.longitude)-radians($${i++}))+sin(radians($${i++}))*sin(radians(g.latitude)))))::numeric,1) as distance`;
         p.push(parseFloat(lat),parseFloat(lng),parseFloat(lat));
       }
@@ -181,8 +188,9 @@ const guideProfiles = {
       if(maxPrice){sql+=` AND g.hourly_rate<=$${i++}`;p.push(parseFloat(maxPrice));}
       if(rating){sql+=` AND g.avg_rating>=$${i++}`;p.push(parseFloat(rating));}
       if(isAvailable==='true')sql+=` AND g.is_available=true`;
-      if(lat&&lng){sql+=` AND g.latitude IS NOT NULL AND g.longitude IS NOT NULL AND (6371*acos(LEAST(1,cos(radians($${i++}))*cos(radians(g.latitude))*cos(radians(g.longitude)-radians($${i++}))+sin(radians($${i++}))*sin(radians(g.latitude)))))<$${i++}`;p.push(parseFloat(lat),parseFloat(lng),parseFloat(lat),parseFloat(radius));}
-      sql+= lat&&lng ? ` ORDER BY distance ASC` : ` ORDER BY g.avg_rating DESC,g.total_bookings DESC`;
+      if(hasCoords)sql+=` AND g.latitude IS NOT NULL AND g.longitude IS NOT NULL`;
+      if(hasCoords&&radius){sql+=` AND (6371*acos(LEAST(1,cos(radians($${i++}))*cos(radians(g.latitude))*cos(radians(g.longitude)-radians($${i++}))+sin(radians($${i++}))*sin(radians(g.latitude)))))<$${i++}`;p.push(parseFloat(lat),parseFloat(lng),parseFloat(lat),parseFloat(radius));}
+      sql+= hasCoords ? ` ORDER BY distance ASC` : ` ORDER BY g.avg_rating DESC,g.total_bookings DESC`;
       sql+=` LIMIT $${i++} OFFSET $${i++}`;
       p.push(parseInt(limit),(parseInt(page)-1)*parseInt(limit));
       const rows=await query(sql,p);
@@ -195,6 +203,17 @@ const guideProfiles = {
     if(maxPrice)s=s.filter(g=>g.hourlyRate<=parseFloat(maxPrice));
     if(rating)s=s.filter(g=>g.avgRating>=parseFloat(rating));
     if(isAvailable==='true')s=s.filter(g=>g.isAvailable===true);
+    if(hasCoords){
+      const userLat = parseFloat(lat);
+      const userLng = parseFloat(lng);
+      s=s
+        .filter(g=>g.latitude!=null&&g.longitude!=null)
+        .map(g=>({...g,distance:distanceKm(userLat,userLng,parseFloat(g.latitude),parseFloat(g.longitude))}));
+      if(radius)s=s.filter(g=>g.distance<parseFloat(radius));
+      s=s.sort((a,b)=>a.distance-b.distance);
+    } else {
+      s=s.sort((a,b)=>(b.avgRating||0)-(a.avgRating||0)||(b.totalBookings||0)-(a.totalBookings||0));
+    }
     const skip=(parseInt(page)-1)*parseInt(limit);
     return Promise.all(s.slice(skip,skip+parseInt(limit)).map(g=>this._eu(g)));
   },
@@ -373,6 +392,18 @@ const groupTourMembers = {
     if(USE_PG){await query('INSERT INTO group_tour_members(id,group_tour_id,user_id) VALUES($1,$2,$3)',[id,gtId,uid]);return{id,groupTourId:gtId,userId:uid,joinedAt:now()};}
     const s=loadStore('group_tour_members'); const m={id,groupTourId:gtId,userId:uid,joinedAt:now(),paymentStatus:'PENDING'}; s.push(m); saveStore('group_tour_members',s); return m;
   },
+  async leave(gtId,uid) {
+    const t=await groupTours.findById(gtId); if(!t)throw new Error('Tour not found');
+    if(USE_PG){
+      const rows=await query('DELETE FROM group_tour_members WHERE group_tour_id=$1 AND user_id=$2 RETURNING id',[gtId,uid]);
+      if(!rows.length)throw new Error('You have not joined this tour');
+      return true;
+    }
+    const s=loadStore('group_tour_members');
+    const idx=s.findIndex(m=>m.groupTourId===gtId&&m.userId===uid);
+    if(idx===-1)throw new Error('You have not joined this tour');
+    s.splice(idx,1); saveStore('group_tour_members',s); return true;
+  },
   async findByUserTours(uid) {
     if(USE_PG){const rows=await query('SELECT group_tour_id FROM group_tour_members WHERE user_id=$1',[uid]);return Promise.all(rows.map(r=>groupTours.findById(r.group_tour_id)));}
     const mems=loadStore('group_tour_members').filter(m=>m.userId===uid);
@@ -411,35 +442,6 @@ const reels = {
 };
 
 // ── MESSAGES ──
-const reelComments = {
-  async create(data) {
-    const id = uuid();
-    if (USE_PG) {
-      await query('INSERT INTO reel_comments(id,reel_id,user_id,content) VALUES($1,$2,$3,$4)', [id, data.reelId, data.userId, data.content]);
-      await query('UPDATE reels SET comments_count=comments_count+1 WHERE id=$1', [data.reelId]);
-      const row = (await query('SELECT rc.*,u.full_name,u.avatar_url FROM reel_comments rc JOIN users u ON u.id=rc.user_id WHERE rc.id=$1', [id]))[0];
-      return { id: row.id, reelId: row.reel_id, userId: row.user_id, content: row.content, createdAt: row.created_at, user: { id: row.user_id, fullName: row.full_name, avatarUrl: row.avatar_url } };
-    }
-    const s = loadStore('reel_comments');
-    const comment = { id, reelId: data.reelId, userId: data.userId, content: data.content, createdAt: now() };
-    s.push(comment); saveStore('reel_comments', s);
-    const rs = loadStore('reels'); const rIdx = rs.findIndex(r => r.id === data.reelId);
-    if (rIdx !== -1) { rs[rIdx].commentsCount = (rs[rIdx].commentsCount || 0) + 1; saveStore('reels', rs); }
-    const u = await users.findById(data.userId);
-    return { ...comment, user: u ? { id: u.id, fullName: u.fullName, avatarUrl: u.avatarUrl } : null };
-  },
-  async findByReel(reelId) {
-    if (USE_PG) {
-      const rows = await query('SELECT rc.*,u.full_name,u.avatar_url FROM reel_comments rc JOIN users u ON u.id=rc.user_id WHERE rc.reel_id=$1 ORDER BY rc.created_at ASC', [reelId]);
-      return rows.map(row => ({ id: row.id, reelId: row.reel_id, userId: row.user_id, content: row.content, createdAt: row.created_at, user: { id: row.user_id, fullName: row.full_name, avatarUrl: row.avatar_url } }));
-    }
-    const rows = loadStore('reel_comments').filter(c => c.reelId === reelId).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
-    return Promise.all(rows.map(async c => {
-      const u = await users.findById(c.userId);
-      return { ...c, user: u ? { id: u.id, fullName: u.fullName, avatarUrl: u.avatarUrl } : null };
-    }));
-  },
-};
 const messages = {
   async findByBooking(bid) {
     if(USE_PG){const rows=await query(`SELECT m.*,u.full_name as sn,u.avatar_url as sa FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.booking_id=$1 ORDER BY m.created_at ASC`,[bid]);return rows.map(r=>({id:r.id,bookingId:r.booking_id,senderId:r.sender_id,receiverId:r.receiver_id,content:r.content,isRead:r.is_read,createdAt:r.created_at,sender:{id:r.sender_id,fullName:r.sn,avatarUrl:r.sa}}));}
@@ -460,12 +462,13 @@ const messages = {
 
 // ── REVIEWS ──
 const reviews = {
-  async findById(id) {
+  async findByBookingId(bookingId) {
+    if (!bookingId) return null;
     if (USE_PG) {
-      const r = (await query('SELECT * FROM reviews WHERE id=$1', [id]))[0];
-      return r ? { id: r.id, bookingId: r.booking_id, reviewerId: r.reviewer_id, revieweeId: r.reviewee_id, rating: parseFloat(r.rating), comment: r.comment, guideResponse: r.guide_response, createdAt: r.created_at } : null;
+      const r = (await query('SELECT * FROM reviews WHERE booking_id=$1', [bookingId]))[0];
+      return r ? { id:r.id, bookingId:r.booking_id, reviewerId:r.reviewer_id, revieweeId:r.reviewee_id, rating:parseFloat(r.rating), comment:r.comment, guideResponse:r.guide_response, createdAt:r.created_at } : null;
     }
-    return loadStore('reviews').find(r => r.id === id) || null;
+    return loadStore('reviews').find(r => r.bookingId === bookingId) || null;
   },
   async findByReviewee(uid) {
     if(USE_PG){const rows=await query(`SELECT r.*,u.full_name as rn,u.avatar_url as ra FROM reviews r JOIN users u ON u.id=r.reviewer_id WHERE r.reviewee_id=$1 ORDER BY r.created_at DESC`,[uid]);return rows.map(r=>({id:r.id,bookingId:r.booking_id,reviewerId:r.reviewer_id,revieweeId:r.reviewee_id,rating:parseFloat(r.rating),comment:r.comment,guideResponse:r.guide_response,createdAt:r.created_at,reviewer:{id:r.reviewer_id,fullName:r.rn,avatarUrl:r.ra}}));}
@@ -476,14 +479,6 @@ const reviews = {
     if(USE_PG){const ex=await query('SELECT id FROM reviews WHERE booking_id=$1',[data.bookingId]);if(ex.length)throw new Error('Review already submitted');const id=uuid();await query('INSERT INTO reviews(id,booking_id,reviewer_id,reviewee_id,rating,comment) VALUES($1,$2,$3,$4,$5,$6)',[id,data.bookingId,data.reviewerId,data.revieweeId,parseFloat(data.rating),data.comment||'']);await guideProfiles.recalcRating(data.revieweeId);const rows=await query('SELECT r.*,u.full_name as rn,u.avatar_url as ra FROM reviews r JOIN users u ON u.id=r.reviewer_id WHERE r.id=$1',[id]);const r=rows[0];return{id:r.id,bookingId:r.booking_id,reviewerId:r.reviewer_id,revieweeId:r.reviewee_id,rating:parseFloat(r.rating),comment:r.comment,createdAt:r.created_at,reviewer:{id:r.reviewer_id,fullName:r.rn,avatarUrl:r.ra}};}
     const s=loadStore('reviews'); if(s.find(r=>r.bookingId===data.bookingId))throw new Error('Review already submitted');
     const rev={id:uuid(),...data,rating:parseFloat(data.rating),photos:[],guideResponse:null,createdAt:now()}; s.push(rev); saveStore('reviews',s); await guideProfiles.recalcRating(data.revieweeId); return rev;
-  },
-  async update(id, upd) {
-    if (USE_PG) {
-      if (upd.guideResponse !== undefined) await query('UPDATE reviews SET guide_response=$1 WHERE id=$2', [upd.guideResponse, id]);
-      return this.findById(id);
-    }
-    const s = loadStore('reviews'); const idx = s.findIndex(r => r.id === id); if (idx === -1) return null;
-    s[idx] = { ...s[idx], ...upd }; saveStore('reviews', s); return s[idx];
   },
   _store(){return loadStore('reviews');}, _save(d){saveStore('reviews',d);},
 };
@@ -502,6 +497,120 @@ const notifications = {
   async markRead(id) {
     if(USE_PG){await query('UPDATE notifications SET is_read=true WHERE id=$1',[id]);return{id,isRead:true};}
     const s=loadStore('notifications'); const idx=s.findIndex(n=>n.id===id); if(idx!==-1){s[idx].isRead=true;saveStore('notifications',s);return s[idx];} return null;
+  },
+};
+
+// ── REPORTS / BLOCKLIST ──
+const blockedIdentifiers = {
+  normalizeEmail,
+  normalizePhone,
+  async isBlocked(email, phone) {
+    const checks = [];
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedEmail) checks.push({ type: 'email', value: normalizedEmail });
+    if (normalizedPhone) checks.push({ type: 'phone', value: normalizedPhone });
+    if (!checks.length) return null;
+
+    if (USE_PG) {
+      const rows = await query(
+        'SELECT * FROM blocked_identifiers WHERE (type=$1 AND value=$2) OR (type=$3 AND value=$4) LIMIT 1',
+        [
+          checks[0]?.type || '',
+          checks[0]?.value || '',
+          checks[1]?.type || '',
+          checks[1]?.value || '',
+        ]
+      );
+      const r = rows[0];
+      return r ? { id:r.id, type:r.type, value:r.value, reportedUserId:r.reported_user_id, reportedBy:r.reported_by, bookingId:r.booking_id, reason:r.reason, createdAt:r.created_at } : null;
+    }
+
+    return loadStore('blocked_identifiers').find(item =>
+      checks.some(check => item.type === check.type && item.value === check.value)
+    ) || null;
+  },
+  async blockUser(user, meta={}) {
+    if (!user) return [];
+    const entries = [];
+    const email = normalizeEmail(user.email);
+    const phone = normalizePhone(user.phone);
+    if (email) entries.push({ type: 'email', value: email });
+    if (phone) entries.push({ type: 'phone', value: phone });
+    if (!entries.length) return [];
+
+    if (USE_PG) {
+      const saved = [];
+      for (const entry of entries) {
+        const id = uuid();
+        const rows = await query(
+          `INSERT INTO blocked_identifiers(id,type,value,reported_user_id,reported_by,booking_id,reason)
+           VALUES($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT(type,value) DO UPDATE SET
+             reported_user_id=EXCLUDED.reported_user_id,
+             reported_by=EXCLUDED.reported_by,
+             booking_id=EXCLUDED.booking_id,
+             reason=EXCLUDED.reason
+           RETURNING *`,
+          [id, entry.type, entry.value, user.id, meta.reportedBy || null, meta.bookingId || null, meta.reason || '']
+        );
+        const r = rows[0];
+        saved.push({ id:r.id, type:r.type, value:r.value, reportedUserId:r.reported_user_id, reportedBy:r.reported_by, bookingId:r.booking_id, reason:r.reason, createdAt:r.created_at });
+      }
+      return saved;
+    }
+
+    const store = loadStore('blocked_identifiers');
+    const saved = [];
+    for (const entry of entries) {
+      const existing = store.find(item => item.type === entry.type && item.value === entry.value);
+      const record = {
+        id: existing?.id || uuid(),
+        ...entry,
+        reportedUserId: user.id,
+        reportedBy: meta.reportedBy || null,
+        bookingId: meta.bookingId || null,
+        reason: meta.reason || '',
+        createdAt: existing?.createdAt || now(),
+        updatedAt: now(),
+      };
+      if (existing) Object.assign(existing, record);
+      else store.push(record);
+      saved.push(record);
+    }
+    saveStore('blocked_identifiers', store);
+    return saved;
+  },
+};
+
+const tripReports = {
+  async findByBookingId(bookingId) {
+    if (!bookingId) return null;
+    if (USE_PG) {
+      const r = (await query('SELECT * FROM trip_reports WHERE booking_id=$1', [bookingId]))[0];
+      return r ? { id:r.id, bookingId:r.booking_id, reporterId:r.reporter_id, reportedUserId:r.reported_user_id, reason:r.reason, createdAt:r.created_at } : null;
+    }
+    return loadStore('trip_reports').find(r => r.bookingId === bookingId) || null;
+  },
+  async create(data) {
+    const existing = await this.findByBookingId(data.bookingId);
+    if (existing) return existing;
+    const id = uuid();
+    if (USE_PG) {
+      const r = (await query(
+        `INSERT INTO trip_reports(id,booking_id,reporter_id,reported_user_id,reason)
+         VALUES($1,$2,$3,$4,$5)
+         ON CONFLICT(booking_id) DO UPDATE SET reason=EXCLUDED.reason
+         RETURNING *`,
+        [id, data.bookingId, data.reporterId, data.reportedUserId, data.reason || '']
+      ))[0];
+      return { id:r.id, bookingId:r.booking_id, reporterId:r.reporter_id, reportedUserId:r.reported_user_id, reason:r.reason, createdAt:r.created_at };
+    }
+    const store = loadStore('trip_reports');
+    const report = { id, bookingId:data.bookingId, reporterId:data.reporterId, reportedUserId:data.reportedUserId, reason:data.reason || '', createdAt:now() };
+    store.push(report);
+    saveStore('trip_reports', store);
+    return report;
   },
 };
 
@@ -544,7 +653,7 @@ const sosAlerts = {
   },
 };
 
-module.exports = { users, guideProfiles, travelerProfiles, bookings, groupTours, groupTourMembers, reels, reelComments, messages, reviews, notifications, hiddenGems, walletTransactions, sosAlerts, initSchema, USE_PG, query, follows: null }; // follows added below
+module.exports = { users, guideProfiles, travelerProfiles, bookings, groupTours, groupTourMembers, reels, messages, reviews, notifications, blockedIdentifiers, tripReports, hiddenGems, walletTransactions, sosAlerts, initSchema, USE_PG, query, follows: null }; // follows added below
 
 
 // ── FOLLOWS (Friend Requests) ──

@@ -3,10 +3,11 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/shared/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { guideApi, uploadApi, friendsApi, reviewApi } from '../lib/api';
+import { guideApi, uploadApi, friendsApi, reviewApi, bookingApi } from '../lib/api';
 import { api } from '../lib/api';
-import { MapPin, Star, Clock, Camera, Globe, Award, MessageCircle, UserPlus, UserCheck, Film, Heart, Upload, Pencil, Car, Hotel, UtensilsCrossed, Users, X } from 'lucide-react';
+import { MapPin, Star, Clock, Camera, Globe, Award, MessageCircle, UserPlus, UserCheck, Film, Heart, Upload, Pencil, Car, Hotel, UtensilsCrossed, Users, X, CheckCircle, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
+import { getLocationImages } from '../lib/locationImages';
 
 const CITY_GRADIENTS = {
   'Mumbai':    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
@@ -18,6 +19,141 @@ const CITY_GRADIENTS = {
   'Udaipur':   'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
   'Bangalore': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
 };
+
+const CITY_COVER_IMAGES = {
+  Mumbai: 'https://images.unsplash.com/photo-1562979314-bee7453e911c?auto=format&fit=crop&w=1600&q=80',
+  Delhi: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=1600&q=80',
+  Jaipur: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?auto=format&fit=crop&w=1600&q=80',
+  Goa: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1600&q=80',
+  Varanasi: 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&w=1600&q=80',
+  Kochi: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?auto=format&fit=crop&w=1600&q=80',
+  Udaipur: 'https://images.unsplash.com/photo-1590579491624-f98f36d4c763?auto=format&fit=crop&w=1600&q=80',
+  Bangalore: 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=1600&q=80',
+};
+
+const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=1600&q=80';
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function GuideWorkedCalendar({ completedTours, upcomingTours = [], showUpcoming = false }) {
+  const calendarTours = showUpcoming ? [...upcomingTours, ...completedTours] : completedTours;
+  const latestTourDate = calendarTours
+    .map(t => new Date(t.date))
+    .filter(d => !Number.isNaN(d.getTime()))
+    .sort((a, b) => b - a)[0];
+  const [visibleMonth, setVisibleMonth] = useState(() => latestTourDate || new Date());
+
+  const completedByDate = completedTours.reduce((map, tour) => {
+    const d = new Date(tour.date);
+    if (Number.isNaN(d.getTime())) return map;
+    const key = dateKey(d);
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+  const upcomingByDate = upcomingTours.reduce((map, tour) => {
+    const d = new Date(tour.date);
+    if (Number.isNaN(d.getTime())) return map;
+    const key = dateKey(d);
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlanks = first.getDay();
+  const cells = [
+    ...Array.from({ length: leadingBlanks }, (_, i) => ({ type: 'blank', id: `blank-${i}` })),
+    ...Array.from({ length: daysInMonth }, (_, i) => {
+      const date = new Date(year, month, i + 1);
+      const key = dateKey(date);
+      return {
+        type: 'day',
+        date,
+        key,
+        completedCount: completedByDate[key] || 0,
+        upcomingCount: upcomingByDate[key] || 0,
+      };
+    }),
+  ];
+
+  const goMonth = (offset) => {
+    setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  };
+
+  return (
+    <div className="card p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-blue-600" /> {showUpcoming ? 'Tour Calendar' : 'Worked Days'}
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {showUpcoming && `${upcomingTours.length} upcoming · `}{completedTours.length} completed
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => goMonth(-1)} className="rounded-lg p-1.5 hover:bg-gray-100" aria-label="Previous month">
+            <ChevronLeft className="h-4 w-4 text-gray-500" />
+          </button>
+          <button onClick={() => goMonth(1)} className="rounded-lg p-1.5 hover:bg-gray-100" aria-label="Next month">
+            <ChevronRight className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3 text-sm font-bold text-gray-800">{format(visibleMonth, 'MMMM yyyy')}</div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-gray-400">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={`${d}-${i}`}>{d}</div>)}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {cells.map(cell => cell.type === 'blank' ? (
+          <div key={cell.id} className="aspect-square" />
+        ) : (
+          (() => {
+            const hasCompleted = cell.completedCount > 0;
+            const hasUpcoming = cell.upcomingCount > 0;
+            const total = cell.completedCount + cell.upcomingCount;
+            const title = [
+              hasUpcoming ? `${cell.upcomingCount} upcoming tour${cell.upcomingCount > 1 ? 's' : ''}` : '',
+              hasCompleted ? `${cell.completedCount} completed tour${cell.completedCount > 1 ? 's' : ''}` : '',
+            ].filter(Boolean).join(', ') || 'No tours';
+            return (
+          <div
+            key={cell.key}
+            title={title}
+            className={`relative flex aspect-square items-center justify-center rounded-lg text-xs font-semibold transition ${
+              hasCompleted && hasUpcoming
+                ? 'bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-sm'
+                : hasUpcoming
+                ? 'bg-emerald-500 text-white shadow-sm'
+                : hasCompleted
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-50 text-gray-500'
+            }`}
+          >
+            {cell.date.getDate()}
+            {total > 1 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-amber-950">
+                {total}
+              </span>
+            )}
+          </div>
+            );
+          })()
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+        {showUpcoming && <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-500" /> Upcoming</span>}
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-blue-600" /> Completed</span>
+        {showUpcoming && <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-gradient-to-br from-blue-600 to-emerald-500" /> Both</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function GuideProfilePage() {
   const { id } = useParams();
@@ -38,6 +174,7 @@ export default function GuideProfilePage() {
 
   // Cover upload state
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [guideBookings, setGuideBookings] = useState([]);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
@@ -50,7 +187,10 @@ export default function GuideProfilePage() {
     try {
       const d = await guideApi.getById(id);
       setData(d);
-      if (user && d.guide?.userId !== user.id) {
+      if (user && d.guide?.userId === user.id) {
+        const bookingData = await bookingApi.getMyBookings({ role: 'guide' }).catch(() => ({ bookings: [] }));
+        setGuideBookings(bookingData.bookings || []);
+      } else if (user && d.guide?.userId !== user.id) {
         // Load friend status + count in parallel
         const [statusData, countData] = await Promise.all([
           friendsApi.getStatus(d.guide.userId).catch(() => ({ status: 'NONE' })),
@@ -138,20 +278,28 @@ export default function GuideProfilePage() {
   if (loading) return <Layout><div className="text-center py-16"><div className="animate-spin w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full mx-auto"/></div></Layout>;
   if (!data?.guide) return <Layout><div className="text-center py-16 text-gray-500">Guide not found</div></Layout>;
 
-  const { guide, reviews, reels } = data;
+  const { guide, reels, completedTours = [] } = data;
+  const upcomingGuideTours = isOwnProfile
+    ? guideBookings.filter(b => ['PENDING', 'CONFIRMED'].includes(b.status))
+    : [];
   const cityGradient = CITY_GRADIENTS[guide.city] || 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+  const cityCoverImage = getLocationImages(guide.city).hero;
 
   return (
     <Layout>
-      <div className="card overflow-hidden mb-6">
+      <div className="card mb-6">
         {/* ── Cover Banner ─────────────────────────────────────────── */}
-        <div className="relative overflow-hidden group" style={{ height: 220 }}>
+        <div className="relative group" style={{ height: 220 }}>
           {guide.coverImage ? (
             <img src={guide.coverImage} alt={guide.city} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center" style={{ background: cityGradient }}>
-              <p className="text-white text-3xl font-bold drop-shadow">{guide.city}</p>
-              <p className="text-white/80 text-sm mt-1">{guide.country}</p>
+            <div className="relative w-full h-full flex flex-col items-center justify-center" style={{ background: cityGradient }}>
+              <img src={cityCoverImage} alt={guide.city} className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-black/10" />
+              <div className="relative text-center px-4">
+                <p className="text-white text-3xl font-bold drop-shadow">{guide.city}</p>
+                <p className="text-white/85 text-sm mt-1">{guide.country}</p>
+              </div>
             </div>
           )}
 
@@ -162,21 +310,21 @@ export default function GuideProfilePage() {
           {isOwnProfile && (
             <button
               onClick={() => coverInputRef.current?.click()}
-              className="absolute top-3 right-3 bg-black/50 hover:bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition opacity-0 group-hover:opacity-100"
+              className="absolute top-3 right-3 bg-black/55 hover:bg-black/75 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition md:opacity-0 md:group-hover:opacity-100"
             >
               <Pencil className="w-3.5 h-3.5" />
-              {uploadingCover ? 'Uploading...' : 'Edit Cover'}
+              {uploadingCover ? 'Uploading...' : guide.coverImage ? 'Edit Background' : 'Add Background'}
             </button>
           )}
           <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverUpload} className="hidden" disabled={uploadingCover} />
 
-          {/* Avatar — half-overlapping bottom-left */}
-          <div className="absolute left-6" style={{ bottom: -40 }}>
+          {/* Avatar */}
+          <div className="absolute left-6 z-10" style={{ bottom: -44 }}>
             <div className="relative group/av">
               {guide.user?.avatarUrl ? (
-                <img src={guide.user.avatarUrl} className="w-22 h-22 rounded-full border-3 border-white shadow-lg object-cover" style={{ width: 88, height: 88, borderWidth: 3, borderColor: 'white' }} alt="" />
+                <img src={guide.user.avatarUrl} className="rounded-full border-white shadow-lg object-cover bg-white" style={{ width: 88, height: 88, borderWidth: 4 }} alt="" />
               ) : (
-                <div className="rounded-full border-white shadow-lg bg-green-500 flex items-center justify-center text-3xl font-bold text-white" style={{ width: 88, height: 88, borderWidth: 3, borderStyle: 'solid', borderColor: 'white' }}>
+                <div className="rounded-full border-white shadow-lg bg-green-500 flex items-center justify-center text-3xl font-bold text-white" style={{ width: 88, height: 88, borderWidth: 4, borderStyle: 'solid' }}>
                   {guide.user?.fullName?.[0]}
                 </div>
               )}
@@ -191,7 +339,7 @@ export default function GuideProfilePage() {
         </div>
 
         {/* ── Profile info below banner ─────────────────────────────── */}
-        <div className="px-6 pb-5" style={{ paddingTop: 52 }}>
+        <div className="px-6 pb-5" style={{ paddingTop: 58 }}>
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -206,14 +354,15 @@ export default function GuideProfilePage() {
                   <Users className="w-3 h-3" />{friendCount} friend{friendCount !== 1 ? 's' : ''}
                 </p>
               )}
-              {guide.badges?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {guide.badges.map(b => (
-                    <span key={b.id} className="text-xs bg-green-50 text-green-700 border border-green-100 px-2 py-1 rounded-full font-semibold">
-                      {b.label}
-                    </span>
-                  ))}
-                </div>
+              {isOwnProfile && (
+                <button
+                  onClick={() => coverInputRef.current?.click()}
+                  disabled={uploadingCover}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {uploadingCover ? 'Uploading background...' : guide.coverImage ? 'Change background image' : 'Add background image'}
+                </button>
               )}
             </div>
 
@@ -278,6 +427,9 @@ export default function GuideProfilePage() {
             <div className="flex items-center gap-1.5 text-gray-600">
               <Award className="w-4 h-4" />{guide.totalBookings} tours
             </div>
+            <div className="flex items-center gap-1.5 text-gray-600">
+              <CheckCircle className="w-4 h-4" />{completedTours.length} completed
+            </div>
             <div className={`flex items-center gap-1.5 ${guide.isAvailable ? 'text-green-600' : 'text-gray-400'}`}>
               <div className={`w-2 h-2 rounded-full ${guide.isAvailable ? 'bg-green-500' : 'bg-gray-400'}`} />
               {guide.isAvailable ? 'Available Now' : 'Offline'}
@@ -301,6 +453,12 @@ export default function GuideProfilePage() {
       <div className="grid md:grid-cols-3 gap-6">
         {/* Sidebar */}
         <div className="space-y-4">
+          <GuideWorkedCalendar
+            completedTours={completedTours}
+            upcomingTours={upcomingGuideTours}
+            showUpcoming={isOwnProfile}
+          />
+
           {/* Pricing */}
           <div className="card p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Pricing</h3>
@@ -395,7 +553,7 @@ export default function GuideProfilePage() {
           <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
             {[
               { key: 'about', label: 'About' },
-              { key: 'reviews', label: `Reviews (${guide.totalReviews})` },
+              { key: 'completed', label: `Completed (${completedTours.length})` },
               { key: 'reels', label: `Reels (${reels?.length || 0})` },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
@@ -412,53 +570,48 @@ export default function GuideProfilePage() {
             </div>
           )}
 
-          {activeTab === 'reviews' && (
+          {activeTab === 'completed' && (
             <div className="space-y-3">
-              {!reviews?.length ? (
-                <div className="card p-8 text-center text-gray-500">No reviews yet</div>
-              ) : reviews.map(r => (
-                <div key={r.id} className="card p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    {r.reviewer?.avatarUrl ? (
-                      <img src={r.reviewer.avatarUrl} className="w-9 h-9 rounded-full object-cover" alt="" />
+              {!completedTours.length ? (
+                <div className="card p-8 text-center text-gray-500">No completed tours yet</div>
+              ) : completedTours.map(tour => (
+                <div key={tour.id} className="card p-4">
+                  <div className="flex items-start gap-3">
+                    {tour.traveler?.avatarUrl ? (
+                      <img src={tour.traveler.avatarUrl} className="w-10 h-10 rounded-full object-cover" alt="" />
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-600">
-                        {r.reviewer?.fullName?.[0]}
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700">
+                        {tour.traveler?.fullName?.[0] || 'T'}
                       </div>
                     )}
-                    <div>
-                      <p className="font-medium text-sm">{r.reviewer?.fullName}</p>
-                      <p className="text-xs text-gray-400">{format(new Date(r.createdAt), 'MMM d, yyyy')}</p>
-                    </div>
-                    <div className="ml-auto flex">
-                      {[1,2,3,4,5].map(i => (
-                        <Star key={i} className={`w-4 h-4 ${i <= r.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`} />
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-700">{r.comment}</p>
-                  {r.guideResponse ? (
-                    <div className="mt-2 bg-green-50 border-l-4 border-green-500 rounded-r-lg p-3 text-sm text-green-800">
-                      <p className="text-xs font-semibold text-green-600 mb-1">Guide replied:</p>
-                      <p>{r.guideResponse}</p>
-                    </div>
-                  ) : isOwnProfile && (
-                    <div className="mt-2">
-                      {replyingTo === r.id ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea className="input-field text-sm" rows={2} placeholder="Write your response..." value={replyText} onChange={e => setReplyText(e.target.value)} />
-                          <div className="flex gap-2">
-                            <button onClick={() => submitReply(r.id)} disabled={replyLoading} className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50">
-                              {replyLoading ? 'Posting...' : 'Post Reply'}
-                            </button>
-                            <button onClick={() => { setReplyingTo(null); setReplyText(''); }} className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition">Cancel</button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-sm text-gray-900">{tour.traveler?.fullName || 'Traveller'}</p>
+                          <p className="text-xs text-gray-500">
+                            {tour.date && format(new Date(tour.date), 'MMM d, yyyy')} · {tour.duration?.replace(/_/g, ' ')} · ₹{tour.totalAmount?.toFixed(0)}
+                          </p>
+                        </div>
+                        <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-full font-medium">Completed</span>
+                      </div>
+
+                      {tour.review ? (
+                        <div className="mt-3 bg-yellow-50 border border-yellow-100 rounded-xl p-3">
+                          <div className="flex items-center gap-1 mb-1">
+                            {[1,2,3,4,5].map(i => (
+                              <Star key={i} className={`w-3.5 h-3.5 ${i <= tour.review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-yellow-200'}`} />
+                            ))}
                           </div>
+                          <p className="text-sm text-gray-700">{tour.review.comment || 'No written comment.'}</p>
+                          {tour.review.guideResponse && (
+                            <p className="text-xs text-green-700 mt-2 border-t border-yellow-100 pt-2">Guide replied: {tour.review.guideResponse}</p>
+                          )}
                         </div>
                       ) : (
-                        <button onClick={() => setReplyingTo(r.id)} className="text-xs text-green-600 hover:underline mt-1">Reply to this review</button>
+                        <p className="mt-3 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">Review pending from traveller</p>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>

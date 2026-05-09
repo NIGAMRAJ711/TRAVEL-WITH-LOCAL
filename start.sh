@@ -31,16 +31,16 @@ echo -e "${GREEN}✓ Node.js ${NODE_VER}${NC}"
 
 MODE=${1:-"dev"}
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKEND_PORT=$(node -e "const fs=require('fs'); const file='$ROOT_DIR/backend/.env'; let port=process.env.PORT||''; if(!port&&fs.existsSync(file)){const m=fs.readFileSync(file,'utf8').match(/^PORT=(.+)$/m); port=m?m[1].trim():'';} console.log(port||'5001')")
+
+port_in_use() {
+  node -e "const net=require('net'); const port=Number(process.argv[1]); const server=net.createServer(); server.once('error',()=>process.exit(0)); server.once('listening',()=>server.close(()=>process.exit(1))); server.listen(port,'0.0.0.0');" "$1"
+}
 
 # ─── BACKEND ─────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}📦 Setting up backend...${NC}"
 cd "$ROOT_DIR/backend"
-
-if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-  echo "backend/.env not found - copying from .env.example"
-  cp .env.example .env
-fi
 
 if [ ! -d "node_modules" ]; then
   echo "  Installing backend dependencies..."
@@ -77,25 +77,37 @@ if [ "$MODE" = "prod" ]; then
   # Production: serve everything from backend
   cd "$ROOT_DIR/backend"
   echo -e "${GREEN}"
-  echo "  ✅ App running at: http://localhost:5001"
-  echo "  ✅ API health:     http://localhost:5001/health"
+  echo "  ✅ App running at: http://localhost:$BACKEND_PORT"
+  echo "  ✅ API health:     http://localhost:$BACKEND_PORT/health"
   echo -e "${NC}"
   node src/index.js
 else
   # Development: run backend + frontend separately
+  if port_in_use "$BACKEND_PORT"; then
+    echo -e "${RED}Port $BACKEND_PORT is already in use.${NC}"
+    echo "Stop the existing backend process, or change PORT in backend/.env."
+    exit 1
+  fi
+
   cd "$ROOT_DIR/backend"
   node src/index.js &
   BACKEND_PID=$!
-  echo -e "${GREEN}✓ Backend started (PID: $BACKEND_PID)${NC}"
 
   sleep 1
+
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo -e "${RED}Backend failed to start.${NC}"
+    exit 1
+  fi
+
+  echo -e "${GREEN}✓ Backend started (PID: $BACKEND_PID)${NC}"
 
   cd "$ROOT_DIR/frontend"
   echo -e "${GREEN}"
   echo "  ╔════════════════════════════════════════════╗"
   echo "  ║  🌍 Frontend:  http://localhost:5173        ║"
-  echo "  ║  🔌 API:       http://localhost:5001/api    ║"
-  echo "  ║  💡 Health:    http://localhost:5001/health ║"
+  echo "  ║  🔌 API:       http://localhost:$BACKEND_PORT/api    ║"
+  echo "  ║  💡 Health:    http://localhost:$BACKEND_PORT/health ║"
   echo "  ║                                              ║"
   echo "  ║  Press Ctrl+C to stop                        ║"
   echo "  ╚════════════════════════════════════════════╝"
@@ -104,5 +116,6 @@ else
   # Trap Ctrl+C to kill both
   trap "kill $BACKEND_PID 2>/dev/null; exit" INT TERM
 
+  export VITE_API_PROXY_TARGET="http://localhost:$BACKEND_PORT"
   npm run dev
 fi

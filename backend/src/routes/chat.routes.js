@@ -1,7 +1,6 @@
-/** Chat routes: direct messages, booking conversations, contacts, and inbox data. */
 const express = require('express');
 const router = express.Router();
-const { messages, bookings, users, directMessages, follows, USE_PG, query: pgQuery } = require('../db');
+const { messages, bookings, users, directMessages, follows } = require('../db');
 const { protect } = require('../middleware/error.middleware');
 
 // ─── DIRECT MESSAGE ROUTES ────────────────────────────────────────────────────
@@ -17,6 +16,7 @@ router.get('/inbox', protect, async (req, res) => {
 // GET /chat/contacts — friends + guides user has booked, with last message + unread
 router.get('/contacts', protect, async (req, res) => {
   try {
+    const { USE_PG, query: pgQuery } = require('../db');
     let contactMap = new Map();
 
     // 1. Accepted friends — combine both followers and following

@@ -11,8 +11,8 @@ export default function SettingsPage() {
   const toast = useToast();
   const [switching, setSwitching] = useState(false);
 
-  const isGuide = user?.role === 'GUIDE' || user?.role === 'BOTH';
-  const isInGuideDashboard = false;
+  const isGuideMode = user?.role === 'GUIDE' || user?.role === 'BOTH';
+  const hasGuideProfile = !!user?.guideProfile || isGuideMode;
 
   const handleSwitchToGuide = async () => {
     setSwitching(true);
@@ -97,7 +97,7 @@ export default function SettingsPage() {
               <p className="font-bold text-sm">Guide</p>
               <p className="text-xs text-gray-500 mt-0.5">Offer tours, earn</p>
               {user?.role === 'GUIDE' && <p className="text-xs text-green-600 font-medium mt-1">● Active now</p>}
-              {!isGuide && <p className="text-xs text-orange-500 mt-1">Tap to register →</p>}
+              {!hasGuideProfile && <p className="text-xs text-orange-500 mt-1">Tap to register →</p>}
             </button>
           </div>
 
@@ -123,8 +123,8 @@ export default function SettingsPage() {
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </button>
 
-          {isGuide && (
-            <button onClick={() => navigate('/guide-dashboard')}
+          {hasGuideProfile && (
+            <button onClick={() => isGuideMode ? navigate('/guide-dashboard') : handleSwitchToGuide()}
               className="w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition">
               <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
                 <UserCheck className="w-4 h-4 text-green-600" />
@@ -137,7 +137,7 @@ export default function SettingsPage() {
             </button>
           )}
 
-          {!isGuide && (
+          {!hasGuideProfile && (
             <button onClick={() => navigate('/become-guide')}
               className="w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition">
               <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
@@ -180,3 +180,4 @@ export default function SettingsPage() {
     </Layout>
   );
 }
+

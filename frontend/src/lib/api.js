@@ -1,27 +1,11 @@
 // Auto-detect API base URL
 // In dev: Vite proxy handles /api → localhost:5001
 // In production: Use VITE_API_URL or same origin
-const DEFAULT_RENDER_API_ORIGIN = 'https://local-lens-finalbackend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL + '/api'
+  : '/api';
 
-function trimSlash(value = '') {
-  return value.replace(/\/+$/, '');
-}
-
-function getConfiguredApiOrigin() {
-  const configured = trimSlash(import.meta.env.VITE_API_URL || '');
-  if (configured) return configured.endsWith('/api') ? configured.slice(0, -4) : configured;
-
-  if (typeof window !== 'undefined') {
-    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    if (!isLocal) return DEFAULT_RENDER_API_ORIGIN;
-  }
-
-  return '';
-}
-
-const API_ORIGIN = getConfiguredApiOrigin();
-const API_BASE = API_ORIGIN ? `${API_ORIGIN}/api` : '/api';
-const SOCKET_URL = API_ORIGIN;
+const SOCKET_URL = import.meta.env.VITE_API_URL || '';
 
 export { SOCKET_URL };
 
@@ -37,21 +21,17 @@ class ApiClient {
   }
 
   async request(method, path, body = null, isFormData = false) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
     const options = {
       method,
       headers: this.getHeaders(isFormData),
       credentials: 'include',
-      signal: controller.signal,
     };
     if (body) options.body = isFormData ? body : JSON.stringify(body);
 
     try {
       const res = await fetch(`${this.base}${path}`, options);
-      clearTimeout(timeout);
 
-      if (res.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+      if (res.status === 401) {
         const refreshed = await this.refreshToken();
         if (refreshed) {
           options.headers = this.getHeaders(isFormData);
@@ -62,28 +42,16 @@ class ApiClient {
           }
           return retryRes.json();
         } else {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user');
-          if (window.location.pathname !== '/login') window.location.href = '/login';
+          localStorage.clear();
+          window.location.href = '/login';
           return;
         }
       }
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (res.status === 401 && path === '/auth/login') {
-          throw new Error(data.error || 'Invalid email or password');
-        }
-        if (res.status === 404) {
-          throw new Error(data.error || 'Server endpoint not found. Please check the backend URL.');
-        }
-        throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      }
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       return data;
     } catch (err) {
-      clearTimeout(timeout);
-      if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.');
       if (err.name === 'TypeError' && err.message.includes('fetch')) {
         throw new Error('Cannot connect to server. Please check your connection.');
       }
@@ -127,7 +95,6 @@ export const api = new ApiClient();
 export const authApi = {
   register: (d) => api.post('/auth/register', d),
   login: (d) => api.post('/auth/login', d),
-  logout: () => api.post('/auth/logout', {}),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 };
@@ -144,7 +111,6 @@ export const userApi = {
 // Guides
 export const guideApi = {
   search: (params) => api.get('/guides?' + new URLSearchParams(params).toString()),
-  recommend: () => api.get('/guides/recommend'),
   getById: (id) => api.get(`/guides/${id}`),
   register: (d) => api.post('/guides/register', d),
   updateAvailability: (isAvailable) => api.patch('/guides/availability', { isAvailable }),
@@ -163,6 +129,7 @@ export const bookingApi = {
   getMyBookings: (params) => api.get('/bookings/my?' + new URLSearchParams(params).toString()),
   updateStatus: (id, status) => api.patch(`/bookings/${id}/status`, { status }),
   complete: (id) => api.patch(`/bookings/${id}/complete`),
+  cancel: (id) => api.patch(`/bookings/${id}/cancel`, {}),
   reject: (id, reason) => api.patch(`/bookings/${id}/reject`, { reason }),
 };
 
@@ -172,8 +139,6 @@ export const reelApi = {
   upload: (d) => api.post('/reels', d),
   like: (id) => api.post(`/reels/${id}/like`),
   view: (id) => api.post(`/reels/${id}/view`),
-  getComments: (id) => api.get(`/reels/${id}/comments`),
-  comment: (id, content) => api.post(`/reels/${id}/comment`, { content }),
 };
 
 // Group Tours
@@ -182,6 +147,7 @@ export const groupTourApi = {
   getById: (id) => api.get(`/group-tours/${id}`),
   create: (d) => api.post('/group-tours', d),
   join: (id) => api.post(`/group-tours/${id}/join`),
+  leave: (id) => api.post(`/group-tours/${id}/cancel`, {}),
   myJoined: () => api.get('/group-tours/my/joined'),
 };
 
@@ -193,8 +159,10 @@ export const mapApi = {
 
 // Reviews
 export const reviewApi = {
+  pending: () => api.get('/reviews/pending'),
   submit: (d) => api.post('/reviews', d),
   create: (d) => api.post('/reviews', d),
+  report: (d) => api.post('/reviews/report', d),
   respond: (id, response) => api.patch(`/reviews/${id}/respond`, { response }),
 };
 

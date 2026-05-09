@@ -50,11 +50,8 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const logout = async () => {
-    try { await authApi.logout(); } catch {}
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+  const logout = () => {
+    localStorage.clear(); // clears accessToken, refreshToken, user, theme
     setUser(null);
   };
 
@@ -64,7 +61,12 @@ export function AuthProvider({ children }) {
 
   const switchRole = async (role) => {
     const data = await userApi.switchRole(role);
-    setUser(prev => prev ? { ...prev, role: data.user.role } : null);
+    setUser(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, role: data.user.role };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
     return data;
   };
 

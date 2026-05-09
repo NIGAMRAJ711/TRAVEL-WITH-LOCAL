@@ -4,8 +4,39 @@ import Layout from '../../components/shared/Layout';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { guideApi, bookingApi, notificationApi } from '../../lib/api';
-import { DollarSign, Star, Users, Calendar, MessageCircle, Bell, ToggleLeft, ToggleRight, CheckCircle, Clock, XCircle, MapPin, TrendingUp } from 'lucide-react';
+import { DollarSign, Star, Users, Calendar, MessageCircle, Bell, ToggleLeft, ToggleRight, CheckCircle, Clock, XCircle, MapPin, TrendingUp, ArrowRight, Compass, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
+import { getLocationImages } from '../../lib/locationImages';
+
+function BookingDetails({ booking }) {
+  const details = [
+    { label: 'Tour Type', value: booking.bookingType?.replace(/_/g, ' ') },
+    { label: 'Duration', value: booking.duration?.replace(/_/g, ' ') },
+    { label: 'People', value: `${booking.numberOfPeople || 1} person${(booking.numberOfPeople || 1) > 1 ? 's' : ''}` },
+    { label: 'Meetup', value: booking.meetupLocation },
+    { label: 'Hotel / Stay', value: booking.hotelPreference },
+    { label: 'Food', value: booking.restaurantPreference },
+  ].filter(item => item.value);
+
+  return (
+    <div className="mb-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {details.map(item => (
+          <div key={item.label}>
+            <p className="text-gray-400">{item.label}</p>
+            <p className="font-semibold text-gray-700 break-words">{item.value}</p>
+          </div>
+        ))}
+      </div>
+      {booking.specialRequests && (
+        <div className="mt-2 border-t border-gray-200 pt-2">
+          <p className="text-gray-400">Special Requests</p>
+          <p className="font-medium text-gray-700 break-words">{booking.specialRequests}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function GuideDashboard() {
   const { user, refreshUser } = useAuth();
@@ -107,32 +138,33 @@ export default function GuideDashboard() {
   const pendingBookings = bookings.filter(b => b.status === 'PENDING');
   const confirmedBookings = bookings.filter(b => b.status === 'CONFIRMED');
   const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
-  const funnelTotal = Math.max(bookings.length, 1);
-  const earningsBars = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const label = format(d, 'EEE');
-    const value = completedBookings
-      .filter(b => b.updatedAt && new Date(b.updatedAt).toDateString() === d.toDateString())
-      .reduce((sum, b) => sum + (b.basePrice || 0) * 0.9, 0);
-    return { label, value };
-  });
-  const maxEarning = Math.max(...earningsBars.map(b => b.value), 1);
+  const guideImages = getLocationImages(user?.guideProfile?.city);
 
   return (
     <Layout>
+      <div className="dashboard-shell">
+        <div className="dashboard-inner space-y-6">
       {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-green-700 to-emerald-600 rounded-2xl p-6 text-white mb-6">
-        <div className="flex items-start justify-between">
+      <div className="relative overflow-hidden rounded-[1.75rem] text-white min-h-[340px] reveal-up">
+        <img
+          src={guideImages.hero}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/66 to-sky-700/24" />
+        <div className="hero-orb -left-16 top-0 h-52 w-52 bg-sky-300/30" />
+        <div className="hero-orb right-10 bottom-8 h-44 w-44 bg-indigo-300/24" style={{ animationDelay: '1.2s' }} />
+        <div className="relative grid min-h-[340px] items-center gap-6 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-8 lg:p-10">
           <div>
-            <h1 className="text-2xl font-bold mb-1">Guide Dashboard</h1>
-            <p className="text-green-100 text-sm">Welcome back, {user?.fullName?.split(' ')[0]}!</p>
-            <div className="flex items-center gap-3 mt-4">
+            <span className="modern-pill mb-4"><Compass className="h-3.5 w-3.5" /> Guide command center</span>
+            <h1 className="mb-3 text-3xl font-black leading-tight md:text-5xl">Guide Dashboard</h1>
+            <p className="max-w-xl text-sm leading-6 text-white/85 md:text-base">Welcome back, {user?.fullName?.split(' ')[0]}! Manage requests, tours, earnings, and availability with a sharper view of your day.</p>
+            <div className="flex flex-wrap items-center gap-3 mt-6">
               <button
                 onClick={toggleAvailability}
                 disabled={toggling}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
-                  isAvailable ? 'bg-white text-green-700 hover:bg-green-50' : 'bg-green-600 border-2 border-white/40 text-white hover:bg-green-500'
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/10 transition hover:-translate-y-0.5 ${
+                  isAvailable ? 'bg-white text-sky-700 hover:bg-sky-50' : 'bg-white/15 border border-white/40 text-white hover:bg-white/25'
                 }`}
               >
                 {toggling ? (
@@ -144,64 +176,38 @@ export default function GuideDashboard() {
                 )}
                 {isAvailable ? '🟢 Online' : '⚫ Offline'}
               </button>
-              <Link to="/map" className="flex items-center gap-1.5 bg-green-500 border border-white/30 text-white px-3 py-2 rounded-xl text-sm hover:bg-green-400 transition">
-                <MapPin className="w-4 h-4" /> View Map
+              <Link to="/map" className="flex items-center gap-1.5 bg-white/15 border border-white/30 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/25 transition hover:-translate-y-0.5">
+                <MapPin className="w-4 h-4" /> View Map <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-green-200 text-xs mb-1">Wallet Balance</p>
+          <div className="rounded-2xl border border-white/25 bg-slate-950/35 p-5 text-right shadow-lg">
+            <div className="mb-3 ml-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sky-700">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <p className="text-white/70 text-xs mb-1">Wallet Balance</p>
             <p className="text-3xl font-bold">₹{stats?.stats?.walletBalance?.toFixed(0) || '0'}</p>
-            <p className="text-green-200 text-xs mt-1">{stats?.stats?.totalBookings || 0} total tours</p>
+            <p className="text-white/70 text-xs mt-1">{stats?.stats?.totalBookings || 0} total tours</p>
           </div>
         </div>
       </div>
 
       {/* Earnings Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Today", value: `₹${stats?.earnings?.today?.toFixed(0) || '0'}`, icon: DollarSign, color: 'text-green-600 bg-green-50' },
+          { label: "Today", value: `₹${stats?.earnings?.today?.toFixed(0) || '0'}`, icon: DollarSign, color: 'text-sky-600 bg-sky-50' },
           { label: 'This Week', value: `₹${stats?.earnings?.week?.toFixed(0) || '0'}`, icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
           { label: 'This Month', value: `₹${stats?.earnings?.month?.toFixed(0) || '0'}`, icon: Calendar, color: 'text-purple-600 bg-purple-50' },
           { label: 'All Time', value: `₹${stats?.earnings?.total?.toFixed(0) || '0'}`, icon: DollarSign, color: 'text-orange-600 bg-orange-50' },
-        ].map(s => (
-          <div key={s.label} className="card p-4">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${s.color} mb-2`}>
+        ].map((s, index) => (
+          <div key={s.label} className="dashboard-card p-4 reveal-up" style={{ animationDelay: `${index * 90}ms` }}>
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${s.color} mb-3 shadow-sm`}>
               <s.icon className="w-5 h-5" />
             </div>
-            <p className="text-xl font-bold text-gray-900">{s.value}</p>
+            <p className="text-xl font-black text-gray-900">{s.value}</p>
             <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
           </div>
         ))}
-      </div>
-
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
-        <div className="card p-4 md:col-span-2">
-          <h2 className="font-bold text-gray-900 mb-4">7-Day Earnings</h2>
-          <div className="h-36 flex items-end gap-3">
-            {earningsBars.map(b => (
-              <div key={b.label} className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full bg-green-100 rounded-t-lg relative" style={{ height: `${Math.max(8, (b.value / maxEarning) * 120)}px` }}>
-                  <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Rs{Math.round(b.value)}</span>
-                </div>
-                <span className="text-xs text-gray-500">{b.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="card p-4">
-          <h2 className="font-bold text-gray-900 mb-4">Booking Funnel</h2>
-          {[
-            ['Pending', pendingBookings.length, 'bg-yellow-400'],
-            ['Confirmed', confirmedBookings.length, 'bg-green-500'],
-            ['Completed', completedBookings.length, 'bg-blue-500'],
-          ].map(([label, count, color]) => (
-            <div key={label} className="mb-3">
-              <div className="flex justify-between text-xs mb-1"><span>{label}</span><span>{count}</span></div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${(count / funnelTotal) * 100}%` }} /></div>
-            </div>
-          ))}
-        </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -215,7 +221,7 @@ export default function GuideDashboard() {
           </div>
 
           {pendingBookings.length === 0 ? (
-            <div className="card p-8 text-center text-gray-500">
+            <div className="dashboard-card p-8 text-center text-gray-500">
               <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-200" />
               <p className="font-medium text-sm">No pending requests</p>
               <p className="text-xs mt-1">Toggle online to receive bookings</p>
@@ -223,7 +229,7 @@ export default function GuideDashboard() {
           ) : (
             <div className="space-y-3">
               {pendingBookings.map(b => (
-                <div key={b.id} className="card p-4 border-l-4 border-l-yellow-400">
+                <div key={b.id} className="dashboard-card p-4 border-l-4 border-l-yellow-400">
                   <div className="flex items-center gap-3 mb-3">
                     {b.traveler?.avatarUrl ? (
                       <img src={b.traveler.avatarUrl} className="w-10 h-10 rounded-full object-cover" alt="" />
@@ -237,12 +243,10 @@ export default function GuideDashboard() {
                       <p className="text-xs text-gray-500">
                         {b.date && format(new Date(b.date), 'MMM d, yyyy')} · {b.startTime} · {b.duration?.replace(/_/g, ' ')}
                       </p>
-                      <p className="text-xs text-green-600 font-bold">₹{b.totalAmount?.toFixed(0)}</p>
+                      <p className="text-xs text-sky-600 font-bold">₹{b.totalAmount?.toFixed(0)}</p>
                     </div>
                   </div>
-                  {b.specialRequests && (
-                    <p className="text-xs text-gray-600 bg-gray-50 rounded-lg p-2 mb-3 italic">"{b.specialRequests}"</p>
-                  )}
+                  <BookingDetails booking={b} />
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleBookingAction(b.id, 'CONFIRMED')}
@@ -284,17 +288,17 @@ export default function GuideDashboard() {
           </div>
 
           {confirmedBookings.length === 0 ? (
-            <div className="card p-8 text-center text-gray-500">
+            <div className="dashboard-card p-8 text-center text-gray-500">
               <Clock className="w-8 h-8 mx-auto mb-2 text-gray-200" />
               <p className="font-medium text-sm">No upcoming tours</p>
             </div>
           ) : (
             <div className="space-y-3">
               {confirmedBookings.map(b => (
-                <div key={b.id} className="card p-4 border-l-4 border-l-green-500">
+                <div key={b.id} className="dashboard-card p-4 border-l-4 border-l-sky-500">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700">
+                      <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center text-sm font-bold text-sky-700">
                         {b.traveler?.fullName?.[0]}
                       </div>
                       <div>
@@ -306,7 +310,8 @@ export default function GuideDashboard() {
                     </div>
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">CONFIRMED</span>
                   </div>
-                  <p className="text-xs text-green-600 font-bold mb-3">₹{b.totalAmount?.toFixed(0)}</p>
+                  <BookingDetails booking={b} />
+                  <p className="text-xs text-sky-600 font-bold mb-3">₹{b.totalAmount?.toFixed(0)}</p>
                   <div className="flex gap-2">
                     <Link to="/messages" className="flex-1 flex items-center justify-center gap-1.5 text-xs border border-gray-200 py-2 rounded-xl hover:bg-gray-50 transition">
                       <MessageCircle className="w-3.5 h-3.5 text-gray-500" /> Chat
@@ -328,15 +333,15 @@ export default function GuideDashboard() {
       </div>
 
       {/* Stats Summary */}
-      <div className="mt-6 card p-5">
+      <div className="dashboard-card p-5">
         <h2 className="font-bold text-gray-900 mb-4">Profile Performance</h2>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div className="bg-yellow-50 rounded-xl p-3">
             <p className="text-2xl font-bold text-yellow-600">⭐ {stats?.stats?.avgRating?.toFixed(1) || '0.0'}</p>
             <p className="text-xs text-gray-500 mt-0.5">{stats?.stats?.totalReviews || 0} reviews</p>
           </div>
-          <div className="bg-green-50 rounded-xl p-3">
-            <p className="text-2xl font-bold text-green-600">{stats?.stats?.totalBookings || 0}</p>
+          <div className="bg-sky-50 rounded-xl p-3">
+            <p className="text-2xl font-bold text-sky-600">{stats?.stats?.totalBookings || 0}</p>
             <p className="text-xs text-gray-500 mt-0.5">Total tours done</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-3">
@@ -351,11 +356,11 @@ export default function GuideDashboard() {
         <div className="mt-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-gray-900">Notifications</h2>
-            <Link to="/notifications" className="text-xs text-green-600 hover:underline">View all</Link>
+            <Link to="/notifications" className="text-xs text-sky-600 hover:underline">View all</Link>
           </div>
           <div className="space-y-2">
             {notifications.map(n => (
-              <div key={n.id} className="card p-3 border-l-4 border-l-green-500">
+              <div key={n.id} className="dashboard-card p-3 border-l-4 border-l-sky-500">
                 <p className="text-sm font-medium text-gray-900">{n.title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{n.body}</p>
                 <p className="text-xs text-gray-400 mt-1">{format(new Date(n.createdAt), 'MMM d, h:mm a')}</p>
@@ -364,6 +369,8 @@ export default function GuideDashboard() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </Layout>
   );
 }

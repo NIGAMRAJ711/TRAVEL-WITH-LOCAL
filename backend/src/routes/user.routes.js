@@ -1,4 +1,3 @@
-/** User routes: current profile, role switching, wallet, guide profile updates, and bucket list. */
 const express = require('express');
 const router = express.Router();
 const { users, guideProfiles, travelerProfiles, walletTransactions } = require('../db');

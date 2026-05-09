@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Globe, Eye, EyeOff } from 'lucide-react';
+import { Globe, Eye, EyeOff, MapPin, Star, Compass } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, user, loading: authLoading } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [form, setForm] = useState({ email: '', password: '' });
@@ -13,36 +13,50 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!authLoading && user) navigate('/dashboard', { replace: true });
-  }, [authLoading, navigate, user]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.email.trim() || !form.password) {
-      const message = 'Please enter both email and password.';
-      setError(message);
-      toast.warning('Missing login details', message);
-      return;
-    }
     setLoading(true);
     try {
       const user = await login(form.email, form.password);
       toast.success(`Welcome back, ${user.fullName?.split(' ')[0]}! 👋`);
-      navigate('/dashboard', { replace: true });
+      if (user.role === 'GUIDE') navigate('/guide-dashboard');
+      else navigate('/dashboard');
     } catch (err) {
-      const message = err.message || 'Invalid email or password';
-      setError(message);
-      toast.warning('Login failed', message);
+      setError(err.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="min-h-screen relative overflow-hidden bg-slate-950 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.35),transparent_34rem),radial-gradient(circle_at_85%_15%,rgba(249,115,22,0.22),transparent_24rem),linear-gradient(135deg,#020617_0%,#0f172a_48%,#064e3b_100%)]" />
+      <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:36px_36px]" />
+      <div className="relative w-full max-w-6xl grid lg:grid-cols-[1.15fr_0.85fr] gap-8 items-center">
+        <div className="hidden lg:block text-white">
+          <div className="flex items-center gap-2 mb-5">
+            <Globe className="w-9 h-9 text-emerald-300" />
+            <span className="text-3xl font-bold">LocalLens</span>
+          </div>
+          <h1 className="text-5xl font-bold leading-tight max-w-xl">Travel deeper with trusted local guides</h1>
+          <p className="text-white/80 mt-4 max-w-lg text-lg">Book authentic city walks, hidden places, food trails, and photo-friendly routes planned by people who know the streets.</p>
+          <div className="grid grid-cols-3 gap-3 mt-8 max-w-xl">
+            {[
+              { icon: MapPin, label: 'Live map', value: 'Nearby guides' },
+              { icon: Star, label: 'Reviews', value: 'Real travellers' },
+              { icon: Compass, label: 'Tours', value: 'Local routes' },
+            ].map(item => (
+              <div key={item.label} className="bg-white/12 backdrop-blur rounded-xl p-4 border border-white/15">
+                <item.icon className="w-5 h-5 text-emerald-300 mb-3" />
+                <p className="font-semibold">{item.label}</p>
+                <p className="text-xs text-white/70 mt-1">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl w-full max-w-md p-8 ml-auto">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-3">
             <Globe className="w-8 h-8 text-green-600" />
@@ -55,7 +69,7 @@ export default function LoginPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input type="email" className="input-field" placeholder="you@example.com"
-              value={form.email} onChange={e => { setError(''); setForm(f => ({ ...f, email: e.target.value })); }} required />
+              value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
           </div>
 
           <div>
@@ -63,7 +77,7 @@ export default function LoginPage() {
             <div className="relative">
               <input type={showPwd ? 'text' : 'password'} className="input-field pr-10"
                 placeholder="••••••••" value={form.password}
-                onChange={e => { setError(''); setForm(f => ({ ...f, password: e.target.value })); }} required />
+                onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
               <button type="button" onClick={() => setShowPwd(!showPwd)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                 {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -81,7 +95,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base disabled:opacity-70">
+          <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
@@ -96,6 +110,7 @@ export default function LoginPage() {
           <p>Guide: arjun@guide.com / Guide@1234</p>
           <p>Traveller: rohan@traveller.com / Travel@1234</p>
         </div>
+      </div>
       </div>
     </div>
   );

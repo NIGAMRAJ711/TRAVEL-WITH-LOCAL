@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Globe, Eye, EyeOff } from 'lucide-react';
+import { Globe, Eye, EyeOff, MapPin, Camera, Users } from 'lucide-react';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -33,8 +33,37 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="min-h-screen relative overflow-hidden bg-slate-950 flex items-center justify-center p-4">
+      <img
+        src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/80 via-slate-950/55 to-slate-900/70" />
+      <div className="relative w-full max-w-6xl grid lg:grid-cols-[0.9fr_1.1fr] gap-8 items-center">
+        <div className="hidden lg:block text-white">
+          <div className="flex items-center gap-2 mb-5">
+            <Globe className="w-9 h-9 text-emerald-300" />
+            <span className="text-3xl font-bold">LocalLens</span>
+          </div>
+          <h1 className="text-5xl font-bold leading-tight max-w-xl">Start planning trips that feel personal</h1>
+          <p className="text-white/80 mt-4 max-w-lg text-lg">Join as a traveller to find memorable experiences, or become a guide and turn your local knowledge into bookable tours.</p>
+          <div className="grid grid-cols-3 gap-3 mt-8 max-w-xl">
+            {[
+              { icon: MapPin, label: 'Explore', value: 'Find local routes' },
+              { icon: Users, label: 'Connect', value: 'Chat with guides' },
+              { icon: Camera, label: 'Capture', value: 'Share reels' },
+            ].map(item => (
+              <div key={item.label} className="bg-white/12 backdrop-blur rounded-xl p-4 border border-white/15">
+                <item.icon className="w-5 h-5 text-emerald-300 mb-3" />
+                <p className="font-semibold">{item.label}</p>
+                <p className="text-xs text-white/70 mt-1">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl w-full max-w-md p-8 lg:ml-auto">
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Globe className="w-7 h-7 text-green-600" />
@@ -105,6 +134,7 @@ export default function RegisterPage() {
           Already have an account?{' '}
           <Link to="/login" className="text-green-600 font-medium hover:underline">Sign in</Link>
         </p>
+      </div>
       </div>
     </div>
   );
